@@ -16,22 +16,18 @@
  */
 
 // Grab-bag module for small, ongoing custom server tweaks that don't warrant
-// a dedicated module of their own (see README.md). Nothing needs a C++ hook
-// yet - the current content (free_starter_mounts.sql) is pure DB data. This
-// file exists so the build system recognizes mod-madosa as a module at all
-// (a module needs a non-empty src/ to be picked up, which is also what makes
-// its data/sql/db-*/ get applied by the DB updater) and as the place to
-// declare/call new scripts as they're added:
-//
-// void AddSC_something();
+// a dedicated module of their own (see README.md).
 
 void AddSC_madosa_misc()
 {
     // Add new custom scripts here as they're written.
 }
 
+void AddSC_madosa_profession_xp();
+
 // Add all
 void Addmod_madosaScripts()
 {
     AddSC_madosa_misc();
+    AddSC_madosa_profession_xp();
 }

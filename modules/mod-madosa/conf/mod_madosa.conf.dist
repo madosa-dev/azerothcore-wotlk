@@ -1,0 +1,46 @@
+#
+# Copyright (C) 2016+ AzerothCore <www.azerothcore.org>, released under GNU AGPL v3 license: https://github.com/azerothcore/azerothcore-wotlk/blob/master/LICENSE-AGPL3
+#
+
+[worldserver]
+
+########################################
+# mod-madosa Configuration
+########################################
+
+# Madosa.ProfessionXP.Enable
+#
+#        Description: Grant XP for every gather/craft attempt (mining, herbalism, skinning,
+#                     lockpicking, jewelcrafting, inscription, any crafting profession, fishing)
+#                     that still has a chance to raise the skill - not only the ones that
+#                     actually roll a skill point, since e.g. a "green" recipe/node can still be
+#                     crafted/gathered many times before it turns grey. Stops on its own once the
+#                     skill is grey or capped - nothing to tune there, that's how the underlying
+#                     skill-up roll already works.
+#
+#        Default:     1 - Enabled
+#                     0 - Disabled
+#
+Madosa.ProfessionXP.Enable = 1
+
+# Madosa.ProfessionXP.PercentOfLevelXP
+#
+#        Description: XP awarded per gather/craft attempt, as a percentage of the XP required to
+#                     go from the player's current level to the next one. Scales with level so
+#                     it stays similarly meaningful early and late instead of becoming
+#                     negligible at high level or overpowered at low level.
+#
+#        Default:     1.0 (each attempt grants 1% of the current level's XP requirement)
+#
+Madosa.ProfessionXP.PercentOfLevelXP = 1.0
+
+# Madosa.ProfessionXP.SkillGainMultiplier
+#
+#        Description: Multiplies how many skill points an actual skill-up grants, for every
+#                     profession - primary (mining, herbalism, skinning, blacksmithing, etc.) and
+#                     secondary (cooking, first aid, fishing, lockpicking) alike. Independent of
+#                     the XP settings above; a value of 1 leaves skill-up amounts untouched.
+#
+#        Default:     2 (each skill-up grants 2 skill points instead of 1)
+#
+Madosa.ProfessionXP.SkillGainMultiplier = 2
