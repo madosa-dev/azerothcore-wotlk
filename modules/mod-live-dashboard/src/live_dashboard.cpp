@@ -35,6 +35,7 @@
 #include "Playerbots.h"
 #include "ScriptMgr.h"
 
+#include <cmath>
 #include <sstream>
 #include <vector>
 
@@ -93,6 +94,14 @@ private:
             float pctX = player->GetPositionX();
             float pctY = player->GetPositionY();
             Map2ZoneCoordinates(pctX, pctY, areaId);
+
+            // Areas without proper WorldMapArea bounds make Map2ZoneCoordinates divide by
+            // zero (e.g. some instance/phased areas), yielding inf/nan - which would be
+            // written into the SQL as a bareword and break the query ("Unknown column 'inf'").
+            if (!std::isfinite(pctX))
+                pctX = 0.0f;
+            if (!std::isfinite(pctY))
+                pctY = 0.0f;
 
             bool isBot = sPlayerbotsMgr.GetPlayerbotAI(player) != nullptr;
 

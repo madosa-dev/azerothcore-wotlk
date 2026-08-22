@@ -79,12 +79,13 @@ class DB:
     def positions(self) -> list:
         rows = self.query(
             "SELECT guid, name, is_bot, level, class, race, map_id, zone_id, area_id, "
-            "area_name, pct_x, pct_y, hp_pct, guild_name FROM live_player_positions",
+            "area_name, pos_x, pos_y, pct_x, pct_y, hp_pct, guild_name FROM live_player_positions",
             self.characters,
         )
         out = []
         for r in rows:
-            guid, name, is_bot, level, cls, race, map_id, zone_id, area_id, area_name, pct_x, pct_y, hp_pct, guild_name = r
+            (guid, name, is_bot, level, cls, race, map_id, zone_id, area_id, area_name,
+             pos_x, pos_y, pct_x, pct_y, hp_pct, guild_name) = r
             out.append({
                 "guid": int(guid),
                 "name": name,
@@ -96,6 +97,8 @@ class DB:
                 "zoneId": int(zone_id),
                 "areaId": int(area_id),
                 "areaName": area_name or f"Area {area_id}",
+                "posX": float(pos_x),
+                "posY": float(pos_y),
                 "pctX": float(pct_x),
                 "pctY": float(pct_y),
                 "hpPct": int(hp_pct),

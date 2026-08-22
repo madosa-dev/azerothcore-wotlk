@@ -68,46 +68,56 @@ main {
   padding: 20px 24px 40px;
 }
 
-.grid {
+.world-map-wrap {
+  display: flex;
+  justify-content: center;
+}
+
+.world-map {
+  position: relative;
+  width: 100%;
+  max-width: 900px;
+  max-height: 78vh;
+  border-radius: 10px;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.world-map img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+  pointer-events: none;
+}
+
+.other-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 16px;
 }
 
-.area-card {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.area-card h3 {
-  margin: 0;
-  font-size: 13px;
+.other-list h2 {
   display: flex;
   justify-content: space-between;
-  color: var(--text);
 }
 
-.area-card h3 .count {
+.other-list h2 .count {
   color: var(--muted);
   font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
 }
 
-.area-map {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 1 / 1;
-  border-radius: 6px;
-  background-image:
-    linear-gradient(var(--border) 1px, transparent 1px),
-    linear-gradient(90deg, var(--border) 1px, transparent 1px);
-  background-size: 20% 20%;
-  background-color: var(--panel2);
-  overflow: hidden;
+.other-list td.player {
+  color: var(--player);
+}
+
+.other-list td.bot {
+  color: var(--bot);
 }
 
 .dot {
