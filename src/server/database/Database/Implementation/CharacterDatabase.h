@@ -547,6 +547,11 @@ enum CharacterDatabaseStatements : uint32
 
     CHAR_NO_OP_PROVIDE_REALM_CONTEXT,
 
+    // Custom: persistent GM-granted XP boost (see .xpboost command)
+    CHAR_SEL_XP_BOOST,
+    CHAR_REP_XP_BOOST,
+    CHAR_DEL_XP_BOOST,
+
     MAX_CHARACTERDATABASE_STATEMENTS
 };
 

@@ -1194,6 +1194,10 @@ public:
     void GiveXP(uint32 xp, Unit* victim, float group_rate = 1.0f, bool isLFGReward = false);
     void GiveLevel(uint8 level);
 
+    // Custom: persistent GM-granted XP boost, in percent (see .xpboost command)
+    [[nodiscard]] uint16 GetXpBoostPct() const { return m_xpBoostPct; }
+    void SetXpBoostPct(uint16 pct) { m_xpBoostPct = pct; }
+
     void InitStatsForLevel(bool reapplyMods = false);
 
     [[nodiscard]] bool HasActivePowerType(Powers power) override;
@@ -2954,6 +2958,10 @@ protected:
     float _restBonus;
     uint32 _restFlagMask;
     ////////////////////Rest System/////////////////////
+
+    // Custom: persistent GM-granted XP boost, in percent (see .xpboost command)
+    uint16 m_xpBoostPct = 0;
+
     uint32 m_resetTalentsCost;
     time_t m_resetTalentsTime;
     uint32 m_usedTalentCount;

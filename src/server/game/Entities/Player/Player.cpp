@@ -2427,6 +2427,10 @@ void Player::GiveXP(uint32 xp, Unit* victim, float group_rate, bool isLFGReward)
     xp = uint32(xp * (1 + favored_exp_mult));
     // Favored experience increase END
 
+    // Custom: persistent GM-granted XP boost (see .xpboost command)
+    if (m_xpBoostPct)
+        xp = uint32(xp * ((100.0f + m_xpBoostPct) / 100.0f));
+
     // XP to money conversion processed in Player::RewardQuest
     uint32 maxLevel = sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL);
 

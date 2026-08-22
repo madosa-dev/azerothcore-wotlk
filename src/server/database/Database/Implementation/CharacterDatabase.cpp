@@ -648,6 +648,11 @@ void CharacterDatabaseConnection::DoPrepareStatements()
     // By providing the realm ID explicitly, this ensures that mysql reverse proxy will use
     // correct realm database for the transaction.
     PrepareStatement(CHAR_NO_OP_PROVIDE_REALM_CONTEXT, "SELECT ? AS no_op", CONNECTION_ASYNC);
+
+    // Custom: persistent GM-granted XP boost (see .xpboost command)
+    PrepareStatement(CHAR_SEL_XP_BOOST, "SELECT pct FROM character_xp_boost WHERE guid = ?", CONNECTION_SYNCH);
+    PrepareStatement(CHAR_REP_XP_BOOST, "REPLACE INTO character_xp_boost (guid, pct) VALUES (?, ?)", CONNECTION_ASYNC);
+    PrepareStatement(CHAR_DEL_XP_BOOST, "DELETE FROM character_xp_boost WHERE guid = ?", CONNECTION_ASYNC);
 }
 
 CharacterDatabaseConnection::CharacterDatabaseConnection(MySQLConnectionInfo& connInfo) : MySQLConnection(connInfo)
