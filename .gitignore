@@ -125,5 +125,6 @@ __pycache__/
 #  !modules/yourmodule
 #
 # ==================
+!/modules/mod-xpboost
 .cache
 compile_commands.json

@@ -15,12 +15,18 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-// Custom: persistent, GM-granted per-character XP boost.
+// Persistent, GM-granted per-character XP boost.
 //
-// The boost percentage itself is plain data (character_xp_boost table), applied
-// in Player::GiveXP - it is not tied to a spell aura, so it survives death,
+// The boost percentage is plain data (character_xp_boost table) applied via the
+// OnPlayerGiveXP hook - it is not tied to a spell aura, so it survives death,
 // logout and server restarts by construction. A real (but purely cosmetic) aura
 // is (re-)applied on login/resurrect just so the boost is visible as a buff icon.
+//
+// Everything here is module-local on purpose: no core files are touched. The
+// active-player boost percentages are cached in memory (populated on login,
+// cleared on logout) instead of a Player member, and the DB access uses plain
+// queries instead of core prepared statements, since modules cannot extend the
+// core CharacterDatabaseStatements enum.
 
 #include "Chat.h"
 #include "CharacterDatabase.h"
@@ -28,7 +34,6 @@
 #include "Language.h"
 #include "Player.h"
 #include "PlayerScript.h"
-#include "RBAC.h"
 
 using namespace Acore::ChatCommands;
 
@@ -41,11 +46,16 @@ namespace
 
     constexpr uint16 XP_BOOST_MAX_PCT = 2000;
 
+    // Matches the id inserted by data/sql/db-auth/base/xpboost_rbac.sql.
+    constexpr uint32 RBAC_PERM_COMMAND_XPBOOST = 1000;
+
+    // Active players' boost percentages, keyed by low GUID. Populated on login,
+    // erased on logout - avoids adding a field to the core Player class.
+    std::unordered_map<ObjectGuid::LowType, uint16> ActiveXpBoosts;
+
     uint16 LoadXpBoostPct(ObjectGuid::LowType lowGuid)
     {
-        CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_XP_BOOST);
-        stmt->SetData(0, lowGuid);
-        PreparedQueryResult result = CharacterDatabase.Query(stmt);
+        QueryResult result = CharacterDatabase.Query("SELECT pct FROM character_xp_boost WHERE guid = {}", lowGuid);
         if (!result)
             return 0;
 
@@ -56,16 +66,17 @@ namespace
     {
         if (pct == 0)
         {
-            CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_XP_BOOST);
-            stmt->SetData(0, lowGuid);
-            CharacterDatabase.Execute(stmt);
+            CharacterDatabase.Execute("DELETE FROM character_xp_boost WHERE guid = {}", lowGuid);
             return;
         }
 
-        CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_REP_XP_BOOST);
-        stmt->SetData(0, lowGuid);
-        stmt->SetData(1, pct);
-        CharacterDatabase.Execute(stmt);
+        CharacterDatabase.Execute("REPLACE INTO character_xp_boost (guid, pct) VALUES ({}, {})", lowGuid, pct);
+    }
+
+    uint16 GetActiveXpBoostPct(ObjectGuid::LowType lowGuid)
+    {
+        auto itr = ActiveXpBoosts.find(lowGuid);
+        return itr != ActiveXpBoosts.end() ? itr->second : 0;
     }
 
     void ApplyVisual(Player* player, bool active)
@@ -88,16 +99,29 @@ public:
     void OnPlayerLogin(Player* player) override
     {
         uint16 pct = LoadXpBoostPct(player->GetGUID().GetCounter());
-        player->SetXpBoostPct(pct);
-
         if (pct)
+        {
+            ActiveXpBoosts[player->GetGUID().GetCounter()] = pct;
             ApplyVisual(player, true);
+        }
+    }
+
+    void OnPlayerLogout(Player* player) override
+    {
+        ActiveXpBoosts.erase(player->GetGUID().GetCounter());
     }
 
     void OnPlayerResurrect(Player* player, float /*restore_percent*/, bool& /*applySickness*/) override
     {
-        if (player->GetXpBoostPct())
+        if (GetActiveXpBoostPct(player->GetGUID().GetCounter()))
             ApplyVisual(player, true);
+    }
+
+    void OnPlayerGiveXP(Player* player, uint32& amount, Unit* /*victim*/, uint8 /*xpSource*/) override
+    {
+        uint16 pct = GetActiveXpBoostPct(player->GetGUID().GetCounter());
+        if (pct)
+            amount = uint32(amount * ((100.0f + pct) / 100.0f));
     }
 };
 
@@ -110,9 +134,9 @@ public:
     {
         static ChatCommandTable xpBoostCommandTable =
         {
-            { "set",    HandleXpBoostSetCommand,    rbac::RBAC_PERM_COMMAND_XPBOOST, Console::No },
-            { "remove", HandleXpBoostRemoveCommand, rbac::RBAC_PERM_COMMAND_XPBOOST, Console::No },
-            { "info",   HandleXpBoostInfoCommand,   rbac::RBAC_PERM_COMMAND_XPBOOST, Console::No },
+            { "set",    HandleXpBoostSetCommand,    RBAC_PERM_COMMAND_XPBOOST, Console::No },
+            { "remove", HandleXpBoostRemoveCommand, RBAC_PERM_COMMAND_XPBOOST, Console::No },
+            { "info",   HandleXpBoostInfoCommand,   RBAC_PERM_COMMAND_XPBOOST, Console::No },
         };
         static ChatCommandTable commandTable =
         {
@@ -143,7 +167,7 @@ public:
 
         if (Player* target = player->GetConnectedPlayer())
         {
-            target->SetXpBoostPct(pct);
+            ActiveXpBoosts[target->GetGUID().GetCounter()] = pct;
             ApplyVisual(target, true);
         }
 
@@ -167,7 +191,7 @@ public:
 
         if (Player* target = player->GetConnectedPlayer())
         {
-            target->SetXpBoostPct(0);
+            ActiveXpBoosts.erase(target->GetGUID().GetCounter());
             ApplyVisual(target, false);
         }
 
