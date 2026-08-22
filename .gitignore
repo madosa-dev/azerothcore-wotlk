@@ -126,5 +126,6 @@ __pycache__/
 #
 # ==================
 !/modules/mod-xpboost
+!/modules/mod-live-dashboard
 .cache
 compile_commands.json
