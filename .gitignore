@@ -127,5 +127,6 @@ __pycache__/
 # ==================
 !/modules/mod-xpboost
 !/modules/mod-live-dashboard
+!/modules/mod-madosa
 .cache
 compile_commands.json
