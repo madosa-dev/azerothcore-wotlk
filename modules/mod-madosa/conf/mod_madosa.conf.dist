@@ -54,6 +54,19 @@ Madosa.ProfessionXP.PercentOfLevelXP = 1.0
 #
 Madosa.ProfessionXP.SkillGainMultiplier = 2
 
+# Madosa.ProfessionTools.Enable
+#
+#        Description: Hands a player the matching gathering tool (Mining Pick, Skinning
+#                     Knife, Fishing Pole) the moment they know that profession - whether
+#                     they just trained it or already knew it before this was enabled.
+#                     Only touches gathering professions that actually use a tool; skipped
+#                     entirely if they already have one.
+#
+#        Default:     1 - Enabled
+#                     0 - Disabled
+#
+Madosa.ProfessionTools.Enable = 1
+
 # Madosa.AutoLootPet.Enable
 #
 #        Description: While a player has the "Loot Rat" companion (sold for 1000g by the

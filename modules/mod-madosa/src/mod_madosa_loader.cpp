@@ -27,6 +27,7 @@ void AddSC_madosa_settings();
 void AddSC_madosa_command();
 void AddSC_madosa_addon_bridge();
 void AddSC_madosa_profession_xp();
+void AddSC_madosa_profession_tools();
 void AddSC_madosa_autoloot_pet();
 
 // Add all
@@ -37,5 +38,6 @@ void Addmod_madosaScripts()
     AddSC_madosa_command();
     AddSC_madosa_addon_bridge();
     AddSC_madosa_profession_xp();
+    AddSC_madosa_profession_tools();
     AddSC_madosa_autoloot_pet();
 }

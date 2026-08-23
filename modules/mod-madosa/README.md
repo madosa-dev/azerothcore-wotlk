@@ -22,6 +22,13 @@ are substantial enough to stand on their own).
   (spell 33388) and the ten starter mount items' required level to 7, and
   adds a "Riding Instructor" NPC (race-gated gossip menu, one free mount per
   race) spawned in each starting zone.
+- **`src/mod_madosa_profession_tools.cpp`**: hands a player the matching
+  gathering tool (Mining Pick, Skinning Knife, Fishing Pole) the moment they
+  know that profession - on training it (`OnPlayerLearnSpell`) and, to catch
+  characters/bots that already knew it beforehand, on every login too. Keyed
+  off the skill itself rather than a specific trainer spell id, since a
+  trainer "buy" spell is often just a wrapper around the spell that actually
+  sets the skill. See `Madosa.ProfessionTools.Enable`.
 - **`auto_loot_pet.sql`** + `src/mod_madosa_autoloot_pet.cpp`: "Lootbot", a
   companion pet (1000g, sold by a "Special Vendor" NPC in every capital city)
   that auto-loots the owner's kills while summoned. See
