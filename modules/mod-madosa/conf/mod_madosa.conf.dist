@@ -91,6 +91,19 @@ Madosa.AutoLootPet.Enable = 1
 #
 Madosa.AccountCompanions.Enable = 1
 
+# Madosa.InstanceQuestPet.Enable
+#
+#        Description: While summoned inside a dungeon or raid, Questbot offers every quest
+#                     that instance has (skipping the usual level/prerequisite-chain gate -
+#                     the actual accept still runs the normal check, so a quest that truly
+#                     isn't takeable yet still gets rejected the normal way). From anywhere,
+#                     it takes back any instance quest currently in your log.
+#
+#        Default:     1 - Enabled
+#                     0 - Disabled
+#
+Madosa.InstanceQuestPet.Enable = 1
+
 # Madosa.Addon.Enable
 #
 #        Description: Lets the MadosaControl client addon read and change the

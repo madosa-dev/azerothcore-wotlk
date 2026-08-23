@@ -16,7 +16,7 @@
  */
 
 // Makes the mod-madosa companion pets (Lootbot, Classtrainer, Craftbot,
-// Bankbot, Auctionbot) account-wide: once any character on the account has
+// Bankbot, Auctionbot, Questbot) account-wide: once any character on the account has
 // learned one (by using the item bought from the Special Vendor), every
 // other character on that account knows it too, from their next login on -
 // no extra purchase, no client changes. The WotLK client's own "Pets" /
@@ -48,12 +48,13 @@ namespace
         uint32 spellId;
     };
 
-    constexpr std::array<CompanionPet, 5> COMPANION_PETS = {{
+    constexpr std::array<CompanionPet, 6> COMPANION_PETS = {{
         { "Lootbot", 28740 },
         { "Classtrainer", 43918 },
         { "Craftbot", 52615 },
         { "Bankbot", 45174 },
         { "Auctionbot", 45175 },
+        { "Questbot", 43697 },
     }};
 
     bool AccountCompanionsEnabled()

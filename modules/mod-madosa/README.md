@@ -62,7 +62,23 @@ are substantial enough to stand on their own).
   `AuctionHouseMgr::GetAuctionHouseEntryFromFactionTemplate()` always falls
   back to the neutral house) auction house from anywhere, same
   `GOSSIP_OPTION_AUCTIONEER` trick as Bankbot.
-- **`src/mod_madosa_account_companions.cpp`**: makes all five companion pets
+- **`instance_quest_pet.sql`** + `src/mod_madosa_instance_quest_pet.cpp`:
+  "Questbot", a companion pet (2000g) that, while summoned inside a dungeon
+  or raid, offers every quest that instance has - not the usual one-at-a-time
+  chain order, all of it at once - and from anywhere takes back any instance
+  quest currently in the log. The only companion that needed real C++: which
+  quests belong to which instance is computed once at startup from
+  `creature_queststarter`/`gameobject_queststarter` cross-referenced with
+  where those NPCs/objects are actually spawned, checked against the live
+  Map.dbc data (`sMapStore`) since this database's `map_dbc` mirror table
+  isn't populated. The accept list deliberately skips the level and
+  prerequisite-chain checks (`Player::SatisfyQuestLevel`/
+  `SatisfyQuestPreviousQuest`/etc.) but keeps every other real one (class,
+  race, reputation, exclusivity, disables) - the actual accept opcode still
+  runs the full `CanTakeQuest()`, so something that truly isn't takeable yet
+  still gets the normal rejection instead of silently breaking. See
+  `Madosa.InstanceQuestPet.Enable`.
+- **`src/mod_madosa_account_companions.cpp`**: makes all six companion pets
   account-wide - once any character on the account has learned one (used the
   item bought from the Special Vendor), every other character on that
   account knows it too from their next login on, no extra purchase and no

@@ -30,6 +30,7 @@ void AddSC_madosa_profession_xp();
 void AddSC_madosa_profession_tools();
 void AddSC_madosa_autoloot_pet();
 void AddSC_madosa_account_companions();
+void AddSC_madosa_instance_quest_pet();
 
 // Add all
 void Addmod_madosaScripts()
@@ -42,4 +43,5 @@ void Addmod_madosaScripts()
     AddSC_madosa_profession_tools();
     AddSC_madosa_autoloot_pet();
     AddSC_madosa_account_companions();
+    AddSC_madosa_instance_quest_pet();
 }

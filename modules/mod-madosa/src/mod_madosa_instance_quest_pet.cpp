@@ -1,0 +1,206 @@
+/*
+ * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
+// Questbot (see instance_quest_pet.sql): while inside a dungeon or raid,
+// offers every quest that instance has, no matter the usual level/chain-order
+// gating; from anywhere, takes back any instance quest currently in the
+// player's log that's ready (or on the way) to turn in.
+//
+// "Which quests belong to which instance" is derived once at startup from
+// creature_queststarter/gameobject_queststarter cross-referenced with where
+// those NPCs/objects are actually spawned (creature.map/gameobject.map),
+// keeping only the ones on a real dungeon/raid map - checked against the
+// live Map.dbc data (sMapStore), since this database's map_dbc mirror table
+// isn't populated. The result is also written into creature_queststarter/
+// creature_questender for Questbot's own creature entry, since
+// Creature::hasQuest()/hasInvolvedQuest() (checked by the accept/turn-in
+// opcode handlers) only look at that per-entry table - what's actually
+// *offered* in the gossip window is filtered separately, by map, in
+// OnGossipHello below.
+//
+// The accept list intentionally skips Player::SatisfyQuestLevel() and the
+// prerequisite-chain checks (SatisfyQuestPreviousQuest/NextChain/PrevChain/
+// Breadcrumb) - that's the entire point, "every quest this instance has",
+// not just the one next in line - but keeps every other real requirement
+// (class, race, reputation, exclusivity, disables, conditions). The actual
+// accept opcode still runs the full Player::CanTakeQuest() as normal, so a
+// quest that genuinely can't be taken yet (e.g. a hard level requirement)
+// still gets the standard rejection message instead of silently breaking
+// something.
+
+#include "Config.h"
+#include "CreatureScript.h"
+#include "DBCStores.h"
+#include "DisableMgr.h"
+#include "GossipDef.h"
+#include "Map.h"
+#include "ObjectMgr.h"
+#include "Player.h"
+#include "QuestDef.h"
+#include "ScriptMgr.h"
+#include "WorldDatabase.h"
+
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+
+namespace
+{
+    constexpr uint32 QUESTBOT_ENTRY = 24388; // "Questbot" (renamed from "Toothy")
+
+    std::unordered_map<uint32, std::vector<uint32>> instanceQuestsByMap;
+    std::unordered_set<uint32> allInstanceQuestIds;
+
+    bool InstanceQuestPetEnabled()
+    {
+        return sConfigMgr->GetOption<bool>("Madosa.InstanceQuestPet.Enable", true);
+    }
+
+    void IndexIfInstanceQuest(uint32 mapId, uint32 questId)
+    {
+        MapEntry const* mapEntry = sMapStore.LookupEntry(mapId);
+        if (!mapEntry || !mapEntry->IsDungeon())
+            return;
+
+        if (!sObjectMgr->GetQuestTemplate(questId))
+            return;
+
+        if (allInstanceQuestIds.insert(questId).second)
+            instanceQuestsByMap[mapId].push_back(questId);
+    }
+
+    void LoadInstanceQuests()
+    {
+        instanceQuestsByMap.clear();
+        allInstanceQuestIds.clear();
+
+        if (QueryResult result = WorldDatabase.Query(
+                "SELECT DISTINCT c.map, qs.quest FROM creature_queststarter qs JOIN creature c ON c.id = qs.id"))
+        {
+            do
+            {
+                Field* fields = result->Fetch();
+                IndexIfInstanceQuest(fields[0].Get<uint16>(), fields[1].Get<uint32>());
+            } while (result->NextRow());
+        }
+
+        if (QueryResult result = WorldDatabase.Query(
+                "SELECT DISTINCT g.map, qs.quest FROM gameobject_queststarter qs JOIN gameobject g ON g.id = qs.id"))
+        {
+            do
+            {
+                Field* fields = result->Fetch();
+                IndexIfInstanceQuest(fields[0].Get<uint16>(), fields[1].Get<uint32>());
+            } while (result->NextRow());
+        }
+
+        // Makes Creature::hasQuest()/hasInvolvedQuest() accept every one of
+        // these for Questbot, which is what the accept/turn-in opcodes check.
+        WorldDatabase.Execute("DELETE FROM creature_queststarter WHERE id = {}", QUESTBOT_ENTRY);
+        WorldDatabase.Execute("DELETE FROM creature_questender WHERE id = {}", QUESTBOT_ENTRY);
+        for (uint32 questId : allInstanceQuestIds)
+        {
+            WorldDatabase.Execute("INSERT INTO creature_queststarter (id, quest) VALUES ({}, {})", QUESTBOT_ENTRY, questId);
+            WorldDatabase.Execute("INSERT INTO creature_questender (id, quest) VALUES ({}, {})", QUESTBOT_ENTRY, questId);
+        }
+
+        LOG_INFO("module", "mod-madosa: Questbot indexed {} instance quest(s) across {} map(s)",
+            allInstanceQuestIds.size(), instanceQuestsByMap.size());
+    }
+
+    // Same as Player::CanTakeQuest(), minus the level and prerequisite-chain
+    // checks - "every quest this instance has", not just the next in line.
+    bool CanOfferInstanceQuest(Player* player, Quest const* quest)
+    {
+        return !sDisableMgr->IsDisabledFor(DISABLE_TYPE_QUEST, quest->GetQuestId(), player)
+            && player->SatisfyQuestStatus(quest, false)
+            && player->SatisfyQuestExclusiveGroup(quest, false)
+            && player->SatisfyQuestClass(quest, false)
+            && player->SatisfyQuestRace(quest, false)
+            && player->SatisfyQuestSkill(quest, false)
+            && player->SatisfyQuestReputation(quest, false)
+            && player->SatisfyQuestTimed(quest, false)
+            && player->SatisfyQuestDay(quest, false)
+            && player->SatisfyQuestWeek(quest, false)
+            && player->SatisfyQuestMonth(quest, false)
+            && player->SatisfyQuestSeasonal(quest, false)
+            && player->SatisfyQuestConditions(quest, false);
+    }
+}
+
+class npc_madosa_questbot : public CreatureScript
+{
+public:
+    npc_madosa_questbot() : CreatureScript("npc_madosa_questbot") { }
+
+    bool OnGossipHello(Player* player, Creature* creature) override
+    {
+        if (!InstanceQuestPetEnabled())
+            return false;
+
+        player->PlayerTalkClass->ClearMenus();
+        QuestMenu& questMenu = player->PlayerTalkClass->GetQuestMenu();
+
+        // Turn-in section: any instance quest currently in the log, from anywhere.
+        for (uint32 questId : allInstanceQuestIds)
+        {
+            QuestStatus status = player->GetQuestStatus(questId);
+            if (status == QUEST_STATUS_COMPLETE || status == QUEST_STATUS_INCOMPLETE)
+                questMenu.AddMenuItem(questId, 4);
+        }
+
+        // Accept section: only while inside the matching instance.
+        if (player->GetMap() && player->GetMap()->IsDungeon())
+        {
+            auto itr = instanceQuestsByMap.find(player->GetMapId());
+            if (itr != instanceQuestsByMap.end())
+            {
+                for (uint32 questId : itr->second)
+                {
+                    if (player->GetQuestStatus(questId) != QUEST_STATUS_NONE)
+                        continue;
+
+                    Quest const* quest = sObjectMgr->GetQuestTemplate(questId);
+                    if (!quest || !CanOfferInstanceQuest(player, quest))
+                        continue;
+
+                    questMenu.AddMenuItem(questId, quest->IsAutoComplete() ? 4 : 2);
+                }
+            }
+        }
+
+        player->SendPreparedGossip(creature);
+        return true;
+    }
+};
+
+class mod_madosa_instance_quest_pet_world : public WorldScript
+{
+public:
+    mod_madosa_instance_quest_pet_world() : WorldScript("mod_madosa_instance_quest_pet_world") { }
+
+    void OnStartup() override
+    {
+        LoadInstanceQuests();
+    }
+};
+
+void AddSC_madosa_instance_quest_pet()
+{
+    new npc_madosa_questbot();
+    new mod_madosa_instance_quest_pet_world();
+}
