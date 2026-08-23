@@ -44,3 +44,15 @@ Madosa.ProfessionXP.PercentOfLevelXP = 1.0
 #        Default:     2 (each skill-up grants 2 skill points instead of 1)
 #
 Madosa.ProfessionXP.SkillGainMultiplier = 2
+
+# Madosa.AutoLootPet.Enable
+#
+#        Description: While a player has the "Loot Rat" companion (sold for 1000g by the
+#                     Special Vendor in every capital city) summoned, their kills auto-loot
+#                     everything they'd be allowed to take themselves - items still under a
+#                     pending need/greed roll are left for the player to handle normally.
+#
+#        Default:     1 - Enabled
+#                     0 - Disabled
+#
+Madosa.AutoLootPet.Enable = 1
