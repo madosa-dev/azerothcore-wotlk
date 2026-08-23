@@ -70,6 +70,9 @@ void Player::PrepareQuestMenu(ObjectGuid guid)
 
     for (QuestRelations::const_iterator i = objectQIR.first; i != objectQIR.second; ++i)
     {
+        if (qm.GetMenuItemCount() >= GOSSIP_MAX_MENU_ITEMS)
+            return;
+
         uint32 quest_id = i->second;
         QuestStatus status = GetQuestStatus(quest_id);
         if (status == QUEST_STATUS_COMPLETE)
@@ -82,6 +85,9 @@ void Player::PrepareQuestMenu(ObjectGuid guid)
 
     for (QuestRelations::const_iterator i = objectQR.first; i != objectQR.second; ++i)
     {
+        if (qm.GetMenuItemCount() >= GOSSIP_MAX_MENU_ITEMS)
+            return;
+
         uint32 quest_id = i->second;
         Quest const* quest = sObjectMgr->GetQuestTemplate(quest_id);
         if (!quest)

@@ -288,7 +288,15 @@ void QuestMenu::AddMenuItem(uint32 QuestId, uint8 Icon)
     if (!sObjectMgr->GetQuestTemplate(QuestId))
         return;
 
-    ASSERT(_questMenuItems.size() <= GOSSIP_MAX_MENU_ITEMS);
+    // The client cannot display more than this, and the packet's count field is a uint8.
+    // Drop the excess instead of asserting: a quest giver with an unusually large relation
+    // list is a content/data problem, not a reason to take the whole world server down.
+    if (_questMenuItems.size() >= GOSSIP_MAX_MENU_ITEMS)
+    {
+        LOG_ERROR("entities.player.quest", "QuestMenu::AddMenuItem: quest menu is full ({} entries), dropping quest {}",
+            GOSSIP_MAX_MENU_ITEMS, QuestId);
+        return;
+    }
 
     QuestMenuItem questMenuItem;
 
