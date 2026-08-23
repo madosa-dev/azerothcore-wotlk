@@ -52,17 +52,21 @@
 // something.
 
 #include "Config.h"
+#include "Creature.h"
 #include "CreatureScript.h"
 #include "DBCStores.h"
 #include "DisableMgr.h"
 #include "GossipDef.h"
 #include "Map.h"
+#include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Player.h"
+#include "PlayerScript.h"
 #include "QuestDef.h"
 #include "ScriptMgr.h"
 #include "WorldDatabase.h"
 
+#include <algorithm>
 #include <sstream>
 #include <unordered_map>
 #include <unordered_set>
@@ -173,6 +177,39 @@ namespace
 
         LOG_INFO("module", "mod-madosa: Questbot indexed {} instance quest(s) across {} map(s)",
             allInstanceQuestIds.size(), instanceQuestsByMap.size());
+    }
+
+    bool HasQuestbotSummoned(Player* player)
+    {
+        ObjectGuid critterGuid = player->GetCritterGUID();
+        if (!critterGuid)
+            return false;
+
+        Creature* critter = ObjectAccessor::GetCreature(*player, critterGuid);
+        return critter && critter->GetEntry() == QUESTBOT_ENTRY;
+    }
+
+    // Is this a quest Questbot is currently allowed to hand out to this
+    // player - i.e. they have it summoned and are standing in the instance
+    // the quest belongs to? Deliberately the exact condition OnGossipHello
+    // uses to build the accept list, so what's shown and what the accept
+    // opcode allows can't drift apart.
+    bool IsOfferableHere(Player* player, uint32 questId)
+    {
+        if (!InstanceQuestPetEnabled())
+            return false;
+
+        if (!player->GetMap() || !player->GetMap()->IsDungeon())
+            return false;
+
+        auto itr = instanceQuestsByMap.find(player->GetMapId());
+        if (itr == instanceQuestsByMap.end())
+            return false;
+
+        if (std::find(itr->second.begin(), itr->second.end(), questId) == itr->second.end())
+            return false;
+
+        return HasQuestbotSummoned(player);
     }
 
     // Same as Player::CanTakeQuest(), minus the level and prerequisite-chain
@@ -294,6 +331,22 @@ public:
     }
 };
 
+// Questbot's whole point is handing out an instance's quests regardless of
+// where the player is in the chain, so the accept has to waive the same
+// level/prerequisite checks the offer list already skips - otherwise a quest
+// like "Red Silk Bandanas" (needs the Westfall chain starter) shows up but
+// silently refuses to be picked up.
+class mod_madosa_questbot_prerequisites : public PlayerScript
+{
+public:
+    mod_madosa_questbot_prerequisites() : PlayerScript("mod_madosa_questbot_prerequisites") { }
+
+    bool OnPlayerCanBypassQuestPrerequisites(Player* player, Quest const* quest) override
+    {
+        return IsOfferableHere(player, quest->GetQuestId());
+    }
+};
+
 class mod_madosa_instance_quest_pet_world : public WorldScript
 {
 public:
@@ -308,5 +361,6 @@ public:
 void AddSC_madosa_instance_quest_pet()
 {
     new npc_madosa_questbot();
+    new mod_madosa_questbot_prerequisites();
     new mod_madosa_instance_quest_pet_world();
 }

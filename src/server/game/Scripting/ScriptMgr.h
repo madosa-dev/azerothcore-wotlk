@@ -388,6 +388,7 @@ public: /* PlayerScript */
     void OnPlayerGroupRollRewardItem(Player* player, Item* item, uint32 count, RollVote voteType, Roll* roll);
     bool OnPlayerBeforeOpenItem(Player* player, Item* item);
     bool OnPlayerBeforeQuestComplete(Player* player, uint32 quest_id);
+    bool OnPlayerCanBypassQuestPrerequisites(Player* player, Quest const* quest);
     void OnPlayerQuestComputeXP(Player* player, Quest const* quest, uint32& xpValue);
     void OnPlayerBeforeDurabilityRepair(Player* player, ObjectGuid npcGUID, ObjectGuid itemGUID, float& discountMod, uint8 guildBank);
     void OnPlayerBeforeBuyItemFromVendor(Player* player, ObjectGuid vendorguid, uint32 vendorslot, uint32& item, uint8 count, uint8 bag, uint8 slot);

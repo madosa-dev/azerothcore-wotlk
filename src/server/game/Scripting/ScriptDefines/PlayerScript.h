@@ -221,6 +221,7 @@ enum PlayerHook
     PLAYERHOOK_ON_GET_REPUTATION_PRICE_DISCOUNT,
     PLAYERHOOK_ON_LEARN_TAXI_NODE,
     PLAYERHOOK_ON_BEFORE_GET_LEVEL_FOR_XP_GAIN,
+    PLAYERHOOK_CAN_BYPASS_QUEST_PREREQUISITES,
     PLAYERHOOK_END
 };
 
@@ -455,6 +456,12 @@ public:
 
     // After completed a quest
     [[nodiscard]] virtual bool OnPlayerBeforeQuestComplete(Player* /*player*/, uint32 /*quest_id*/) { return true; }
+
+    // Lets a script treat a quest's level and prerequisite-chain requirements (previous quest,
+    // chain order, breadcrumb) as already satisfied for this player, so a custom quest giver can
+    // hand out a quest the player would normally have to work up to. Every other requirement
+    // (class, race, reputation, exclusivity, disables, conditions, ...) still applies as usual.
+    [[nodiscard]] virtual bool OnPlayerCanBypassQuestPrerequisites(Player* /*player*/, Quest const* /*quest*/) { return false; }
 
     // Called after computing the XP reward value for a quest
     virtual void OnPlayerQuestComputeXP(Player* /*player*/, Quest const* /*quest*/, uint32& /*xpValue*/) { }

@@ -488,6 +488,11 @@ bool ScriptMgr::OnPlayerBeforeQuestComplete(Player* player, uint32 quest_id)
     CALL_ENABLED_BOOLEAN_HOOKS(PlayerScript, PLAYERHOOK_ON_BEFORE_QUEST_COMPLETE, !script->OnPlayerBeforeQuestComplete(player, quest_id));
 }
 
+bool ScriptMgr::OnPlayerCanBypassQuestPrerequisites(Player* player, Quest const* quest)
+{
+    CALL_ENABLED_BOOLEAN_HOOKS_WITH_DEFAULT_FALSE(PlayerScript, PLAYERHOOK_CAN_BYPASS_QUEST_PREREQUISITES, script->OnPlayerCanBypassQuestPrerequisites(player, quest));
+}
+
 void ScriptMgr::OnPlayerQuestComputeXP(Player* player, Quest const* quest, uint32& xpValue)
 {
     CALL_ENABLED_HOOKS(PlayerScript, PLAYERHOOK_ON_QUEST_COMPUTE_EXP, script->OnPlayerQuestComputeXP(player, quest, xpValue));

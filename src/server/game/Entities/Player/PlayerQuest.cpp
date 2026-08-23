@@ -251,13 +251,19 @@ bool Player::CanSeeStartQuest(Quest const* quest)
 
 bool Player::CanTakeQuest(Quest const* quest, bool msg)
 {
+    // A script (e.g. a custom quest giver) may declare the level and prerequisite-chain
+    // requirements already satisfied for this player; everything else still applies.
+    bool const bypassPrerequisites = sScriptMgr->OnPlayerCanBypassQuestPrerequisites(this, quest);
+
     return !sDisableMgr->IsDisabledFor(DISABLE_TYPE_QUEST, quest->GetQuestId(), this)
            && SatisfyQuestStatus(quest, msg) && SatisfyQuestExclusiveGroup(quest, msg)
-           && SatisfyQuestClass(quest, msg) && SatisfyQuestRace(quest, msg) && SatisfyQuestLevel(quest, msg)
+           && SatisfyQuestClass(quest, msg) && SatisfyQuestRace(quest, msg)
+           && (bypassPrerequisites || SatisfyQuestLevel(quest, msg))
            && SatisfyQuestSkill(quest, msg) && SatisfyQuestReputation(quest, msg)
-           && SatisfyQuestPreviousQuest(quest, msg) && SatisfyQuestTimed(quest, msg)
-           && SatisfyQuestNextChain(quest, msg) && SatisfyQuestPrevChain(quest, msg)
-           && SatisfyQuestBreadcrumb(quest, msg)
+           && (bypassPrerequisites || SatisfyQuestPreviousQuest(quest, msg)) && SatisfyQuestTimed(quest, msg)
+           && (bypassPrerequisites || SatisfyQuestNextChain(quest, msg))
+           && (bypassPrerequisites || SatisfyQuestPrevChain(quest, msg))
+           && (bypassPrerequisites || SatisfyQuestBreadcrumb(quest, msg))
            && SatisfyQuestDay(quest, msg) && SatisfyQuestWeek(quest, msg)
            && SatisfyQuestMonth(quest, msg) && SatisfyQuestSeasonal(quest, msg)
            && SatisfyQuestConditions(quest, msg);
