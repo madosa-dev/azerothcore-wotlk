@@ -20,21 +20,26 @@
 // gating; from anywhere, takes back any instance quest currently in the
 // player's log that's ready (or on the way) to turn in.
 //
-// "Which quests belong to which instance" is derived once at startup from
-// creature_queststarter/creature_questender/gameobject_queststarter/
-// gameobject_questender cross-referenced with where those NPCs/objects are
-// actually spawned (creature.map/gameobject.map) - both starter and ender,
-// since plenty of classic dungeon quests are handed out by a hub NPC just
-// outside and only turned in inside, so the starter location alone misses
-// them - keeping only the ones on a real dungeon/raid map, checked against
-// the live Map.dbc data (sMapStore) since this database's map_dbc mirror
-// table isn't populated. The result is also written into
-// creature_queststarter/creature_questender for Questbot's own creature
-// entry, since Creature::hasQuest()/hasInvolvedQuest() (checked by the
-// accept/turn-in opcode handlers) only look at that per-entry table - what's
-// actually *offered* in the gossip window, and what icon is shown over
-// Questbot's head, are filtered separately, by map, in OnGossipHello and
-// GetDialogStatus below.
+// "Which quests belong to which instance" comes primarily from the quest's
+// own ZoneOrSort (quest_template.QuestSortID): for a dungeon quest that's
+// the instance's zone/area id, which is exactly how the client groups them
+// under the dungeon's name in the quest log. Mapping area id -> map id via
+// sAreaTableStore then gives the whole set per instance. This is what
+// actually matters - most classic dungeon quests are handed out AND turned
+// in by hub NPCs outside the instance (all five Deadmines quests are), so
+// looking at where the quest giver/ender stands finds almost none of them.
+//
+// Quest-giver/ender spawn location is still scanned as a supplement, for
+// the handful of quests physically anchored inside an instance but sorted
+// elsewhere (e.g. a class or event quest that happens to be turned in at an
+// NPC standing inside). Both sources feed the same per-map index.
+//
+// The result is also written into creature_queststarter/creature_questender
+// for Questbot's own creature entry, since Creature::hasQuest()/
+// hasInvolvedQuest() (checked by the accept/turn-in opcode handlers) only
+// look at that per-entry table - what's actually *offered* in the gossip
+// window, and what icon is shown over Questbot's head, are filtered
+// separately, by map, in OnGossipHello and GetDialogStatus below.
 //
 // The accept list intentionally skips Player::SatisfyQuestLevel() and the
 // prerequisite-chain checks (SatisfyQuestPreviousQuest/NextChain/PrevChain/
@@ -92,6 +97,28 @@ namespace
         instanceQuestsByMap.clear();
         allInstanceQuestIds.clear();
 
+        // Primary source: the quest's own sort id. For a dungeon quest that's
+        // the instance's zone/area id (e.g. 1581 = The Deadmines), which is
+        // how the client groups them in the quest log - independent of where
+        // the quest giver happens to stand.
+        std::unordered_map<uint32, uint32> mapIdByAreaId;
+        for (uint32 i = 0; i < sAreaTableStore.GetNumRows(); ++i)
+            if (AreaTableEntry const* area = sAreaTableStore.LookupEntry(i))
+                mapIdByAreaId[area->ID] = area->mapid;
+
+        for (auto const& [questId, quest] : sObjectMgr->GetQuestTemplates())
+        {
+            int32 zoneOrSort = quest->GetZoneOrSort();
+            if (zoneOrSort <= 0) // negative values are QuestSort.dbc categories, not zones
+                continue;
+
+            auto areaItr = mapIdByAreaId.find(uint32(zoneOrSort));
+            if (areaItr != mapIdByAreaId.end())
+                IndexIfInstanceQuest(areaItr->second, questId);
+        }
+
+        // Supplement: quests physically anchored inside an instance but
+        // sorted elsewhere - picked up from where their giver/ender spawns.
         char const* queries[] = {
             "SELECT DISTINCT c.map, qs.quest FROM creature_queststarter qs JOIN creature c ON c.id = qs.id",
             "SELECT DISTINCT c.map, qe.quest FROM creature_questender qe JOIN creature c ON c.id = qe.id",
@@ -197,12 +224,25 @@ public:
         player->PlayerTalkClass->ClearMenus();
         QuestMenu& questMenu = player->PlayerTalkClass->GetQuestMenu();
 
+        // QuestMenu::AddMenuItem() asserts on more than GOSSIP_MAX_MENU_ITEMS
+        // entries, so every add below goes through this cap - a player
+        // carrying a lot of instance quests must not crash the server.
+        auto addQuest = [&questMenu](uint32 questId, uint8 icon)
+        {
+            if (questMenu.GetMenuItemCount() >= GOSSIP_MAX_MENU_ITEMS)
+                return false;
+
+            questMenu.AddMenuItem(questId, icon);
+            return true;
+        };
+
         // Turn-in section: any instance quest currently in the log, from anywhere.
         for (uint32 questId : allInstanceQuestIds)
         {
             QuestStatus status = player->GetQuestStatus(questId);
             if (status == QUEST_STATUS_COMPLETE || status == QUEST_STATUS_INCOMPLETE)
-                questMenu.AddMenuItem(questId, 4);
+                if (!addQuest(questId, 4))
+                    break;
         }
 
         // Accept section: only while inside the matching instance.
@@ -220,7 +260,8 @@ public:
                     if (!quest || !CanOfferInstanceQuest(player, quest))
                         continue;
 
-                    questMenu.AddMenuItem(questId, quest->IsAutoComplete() ? 4 : 2);
+                    if (!addQuest(questId, quest->IsAutoComplete() ? 4 : 2))
+                        break;
                 }
             }
         }
