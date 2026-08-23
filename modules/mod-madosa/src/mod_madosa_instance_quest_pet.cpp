@@ -63,6 +63,7 @@
 #include "ScriptMgr.h"
 #include "WorldDatabase.h"
 
+#include <sstream>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -139,14 +140,36 @@ namespace
         }
 
         // Makes Creature::hasQuest()/hasInvolvedQuest() accept every one of
-        // these for Questbot, which is what the accept/turn-in opcodes check.
-        WorldDatabase.Execute("DELETE FROM creature_queststarter WHERE id = {}", QUESTBOT_ENTRY);
-        WorldDatabase.Execute("DELETE FROM creature_questender WHERE id = {}", QUESTBOT_ENTRY);
-        for (uint32 questId : allInstanceQuestIds)
+        // these for Questbot, which is what the accept/turn-in opcodes check
+        // before letting a quest be picked up or handed in.
+        //
+        // DirectExecute, not Execute: the async queue would still be draining
+        // when the reload below runs. And the reload is required - ObjectMgr
+        // populates its in-memory relation maps (the ones hasQuest() actually
+        // reads) during LoadQuestStartersAndEnders(), long before OnStartup,
+        // so writing the rows alone would only take effect one restart later.
+        WorldDatabase.DirectExecute("DELETE FROM creature_queststarter WHERE id = {}", QUESTBOT_ENTRY);
+        WorldDatabase.DirectExecute("DELETE FROM creature_questender WHERE id = {}", QUESTBOT_ENTRY);
+
+        if (!allInstanceQuestIds.empty())
         {
-            WorldDatabase.Execute("INSERT INTO creature_queststarter (id, quest) VALUES ({}, {})", QUESTBOT_ENTRY, questId);
-            WorldDatabase.Execute("INSERT INTO creature_questender (id, quest) VALUES ({}, {})", QUESTBOT_ENTRY, questId);
+            std::ostringstream values;
+            bool first = true;
+            for (uint32 questId : allInstanceQuestIds)
+            {
+                if (!first)
+                    values << ',';
+                values << '(' << QUESTBOT_ENTRY << ',' << questId << ')';
+                first = false;
+            }
+
+            std::string const rows = values.str();
+            WorldDatabase.DirectExecute("INSERT INTO creature_queststarter (id, quest) VALUES {}", rows);
+            WorldDatabase.DirectExecute("INSERT INTO creature_questender (id, quest) VALUES {}", rows);
         }
+
+        sObjectMgr->LoadCreatureQuestStarters();
+        sObjectMgr->LoadCreatureQuestEnders();
 
         LOG_INFO("module", "mod-madosa: Questbot indexed {} instance quest(s) across {} map(s)",
             allInstanceQuestIds.size(), instanceQuestsByMap.size());
