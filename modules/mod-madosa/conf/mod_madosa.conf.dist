@@ -7,6 +7,15 @@
 ########################################
 # mod-madosa Configuration
 ########################################
+#
+# The values below are only the install-time defaults. A GM can change any of
+# them at any time, with no server restart, either with the ".madosa" chat
+# commands (".madosa status" / ".madosa set <key> <value>" / ".madosa reset
+# <key>") or from the MadosaControl client addon (see
+# modules/mod-madosa/addon/MadosaControl). Changes are stored in the
+# mod_madosa_settings world DB table and survive restarts; ".madosa reset
+# <key>" reverts a setting back to the value configured here.
+#
 
 # Madosa.ProfessionXP.Enable
 #
@@ -56,3 +65,17 @@ Madosa.ProfessionXP.SkillGainMultiplier = 2
 #                     0 - Disabled
 #
 Madosa.AutoLootPet.Enable = 1
+
+# Madosa.Addon.Enable
+#
+#        Description: Lets the MadosaControl client addon read and change the
+#                     settings above over the addon (self-whisper) channel.
+#                     Every request still requires the "Command: madosa" RBAC
+#                     permission (see data/sql/db-auth/base/madosa_settings_rbac.sql) -
+#                     this only turns the bridge itself on or off. Disabling
+#                     it does not affect the ".madosa" chat commands.
+#
+#        Default:     1 - Enabled
+#                     0 - Disabled
+#
+Madosa.Addon.Enable = 1

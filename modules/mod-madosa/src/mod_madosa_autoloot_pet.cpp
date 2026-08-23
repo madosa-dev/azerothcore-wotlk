@@ -36,7 +36,8 @@
 // master-loot restriction) the loop just notices the session got released
 // and reopens it via SendLoot() before continuing to the next slot.
 
-#include "Config.h"
+#include "mod_madosa_settings.h"
+
 #include "Creature.h"
 #include "Loot/LootMgr.h"
 #include "ObjectAccessor.h"
@@ -124,7 +125,7 @@ public:
 
     void OnPlayerCreatureKill(Player* killer, Creature* killed) override
     {
-        if (!sConfigMgr->GetOption<bool>("Madosa.AutoLootPet.Enable", true))
+        if (!MadosaSettings::GetAutoLootPetEnable())
             return;
 
         if (!killed->HasDynamicFlag(UNIT_DYNFLAG_LOOTABLE))
@@ -143,7 +144,7 @@ public:
         if (tempSummon->GetEntry() != LOOT_RAT_ENTRY)
             return;
 
-        if (!sConfigMgr->GetOption<bool>("Madosa.AutoLootPet.Enable", true))
+        if (!MadosaSettings::GetAutoLootPetEnable())
             return;
 
         auto itr = lastLootableKill.find(player->GetGUID());

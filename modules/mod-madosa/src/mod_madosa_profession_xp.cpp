@@ -37,7 +37,8 @@
 // SetSkill(), which is exactly what a second, immediate skill-up would have
 // done.
 
-#include "Config.h"
+#include "mod_madosa_settings.h"
+
 #include "DBCStores.h"
 #include "ObjectMgr.h"
 #include "Player.h"
@@ -49,13 +50,13 @@ namespace
 {
     void GrantProfessionXP(Player* player)
     {
-        if (!sConfigMgr->GetOption<bool>("Madosa.ProfessionXP.Enable", true))
+        if (!MadosaSettings::GetProfessionXPEnable())
             return;
 
         if (player->GetLevel() >= sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL))
             return;
 
-        float percent = sConfigMgr->GetOption<float>("Madosa.ProfessionXP.PercentOfLevelXP", 1.0f);
+        float percent = MadosaSettings::GetProfessionXPPercent();
         if (percent <= 0.0f)
             return;
 
@@ -66,7 +67,7 @@ namespace
 
     uint32 SkillGainMultiplier()
     {
-        return std::max<uint32>(1, sConfigMgr->GetOption<uint32>("Madosa.ProfessionXP.SkillGainMultiplier", 2));
+        return MadosaSettings::GetProfessionXPSkillMultiplier();
     }
 }
 

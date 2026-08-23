@@ -1,0 +1,298 @@
+-- MadosaControl: GM control panel for mod-madosa server settings.
+--
+-- Talks to the mod-madosa addon bridge (mod_madosa_addon_bridge.cpp) over a
+-- self-whisper addon message (SendAddonMessage(..., "WHISPER", <own name>)) -
+-- the same self-whisper + LANG_ADDON trick every WotLK addon bridge (like
+-- HomebrewGM) uses. Changes take effect on the server immediately, no
+-- restart needed, and persist across restarts. Requires a GM account with
+-- the "Command: madosa" RBAC permission (see
+-- data/sql/db-auth/base/madosa_settings_rbac.sql).
+
+local ADDON_PREFIX = "MADOSA"
+local FIELD_SEP = "~"
+
+MadosaControlDB = MadosaControlDB or {}
+
+local function trim(value)
+    return (string.gsub(value or "", "^%s*(.-)%s*$", "%1"))
+end
+
+local function split(value)
+    local fields = {}
+    local start = 1
+    value = value or ""
+    while true do
+        local pos = string.find(value, FIELD_SEP, start, true)
+        if not pos then
+            table.insert(fields, string.sub(value, start))
+            return fields
+        end
+        table.insert(fields, string.sub(value, start, pos - 1))
+        start = pos + 1
+    end
+end
+
+----------------------------------------------------------------------------
+-- Comm
+----------------------------------------------------------------------------
+
+local function SendCommand(opcode, payload)
+    local player = UnitName("player")
+    if not player or player == "" then return end
+
+    local message = opcode
+    if payload and payload ~= "" then
+        message = message .. FIELD_SEP .. payload
+    end
+    SendAddonMessage(ADDON_PREFIX, message, "WHISPER", player)
+end
+
+local function RequestSettings()
+    SendCommand("GET")
+end
+
+----------------------------------------------------------------------------
+-- UI
+----------------------------------------------------------------------------
+
+local frame
+local statusText
+local controls = {}  -- key -> { checkbox = ... } or { editbox = ... }
+local settings = {}  -- key -> current server value (string), from the last GET
+
+local SETTING_DEFS = {
+    { key = "professionxp.enable", label = "Profession XP enabled", kind = "bool" },
+    { key = "professionxp.percent", label = "Profession XP: % of level XP per attempt", kind = "number" },
+    { key = "professionxp.skillmultiplier", label = "Profession skill-up multiplier", kind = "number" },
+    { key = "autolootpet.enable", label = "Lootbot auto-loot pet enabled", kind = "bool" },
+}
+
+local function SetStatus(text, isError)
+    if not statusText then return end
+    if isError then
+        statusText:SetTextColor(1, 0.35, 0.35)
+    else
+        statusText:SetTextColor(0.7, 0.9, 1)
+    end
+    statusText:SetText(text or "")
+end
+
+local function ApplyValueToControl(def, value)
+    local control = controls[def.key]
+    if not control or value == nil then return end
+
+    if def.kind == "bool" then
+        control.checkbox:SetChecked(value == "1")
+    else
+        control.editbox:SetText(value)
+    end
+end
+
+local function RefreshUI()
+    for _, def in ipairs(SETTING_DEFS) do
+        ApplyValueToControl(def, settings[def.key])
+    end
+end
+
+local function CreateBackdropFrame(name, parent, width, height)
+    local f = CreateFrame("Frame", name, parent)
+    f:SetWidth(width)
+    f:SetHeight(height)
+    f:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile = true, tileSize = 32, edgeSize = 32,
+        insets = { left = 11, right = 12, top = 12, bottom = 11 },
+    })
+    return f
+end
+
+local function OnDragStop(self)
+    self:StopMovingOrSizing()
+    local point, _, _, x, y = self:GetPoint()
+    MadosaControlDB.point = point
+    MadosaControlDB.x = x
+    MadosaControlDB.y = y
+end
+
+local function MadosaControl_Apply()
+    local changed = 0
+    for _, def in ipairs(SETTING_DEFS) do
+        local control = controls[def.key]
+        local value
+
+        if def.kind == "bool" then
+            value = control.checkbox:GetChecked() and "1" or "0"
+        else
+            value = trim(control.editbox:GetText())
+            if value == "" or not tonumber(value) then
+                SetStatus(def.label .. " needs a number.", true)
+                return
+            end
+        end
+
+        if value ~= settings[def.key] then
+            SendCommand("SET", def.key .. FIELD_SEP .. value)
+            changed = changed + 1
+        end
+    end
+
+    if changed == 0 then
+        SetStatus("Nothing changed.")
+    else
+        SetStatus("Sent " .. changed .. " change(s)...")
+    end
+end
+
+local function BuildFrame()
+    frame = CreateBackdropFrame("MadosaControlFrame", UIParent, 380, 300)
+    frame:SetPoint("CENTER")
+    frame:SetMovable(true)
+    frame:EnableMouse(true)
+    frame:RegisterForDrag("LeftButton")
+    frame:SetScript("OnDragStart", frame.StartMoving)
+    frame:SetScript("OnDragStop", OnDragStop)
+    frame:SetFrameStrata("DIALOG")
+    frame:Hide()
+
+    if MadosaControlDB.point then
+        frame:ClearAllPoints()
+        frame:SetPoint(MadosaControlDB.point, UIParent, MadosaControlDB.point, MadosaControlDB.x, MadosaControlDB.y)
+    end
+
+    local title = frame:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+    title:SetPoint("TOP", 0, -16)
+    title:SetText("mod-madosa control")
+
+    local closeButton = CreateFrame("Button", "MadosaControlFrameCloseButton", frame, "UIPanelCloseButton")
+    closeButton:SetPoint("TOPRIGHT", -4, -4)
+    closeButton:SetScript("OnClick", function() frame:Hide() end)
+
+    local y = -50
+    for _, def in ipairs(SETTING_DEFS) do
+        local label = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+        label:SetPoint("TOPLEFT", 24, y)
+        label:SetWidth(240)
+        label:SetJustifyH("LEFT")
+        label:SetText(def.label)
+
+        if def.kind == "bool" then
+            local checkbox = CreateFrame("CheckButton", "MadosaControl_" .. def.key, frame, "UICheckButtonTemplate")
+            checkbox:SetPoint("TOPRIGHT", -30, y + 4)
+            checkbox:SetWidth(24)
+            checkbox:SetHeight(24)
+            controls[def.key] = { checkbox = checkbox }
+            y = y - 32
+        else
+            local editbox = CreateFrame("EditBox", "MadosaControl_" .. def.key, frame, "InputBoxTemplate")
+            editbox:SetAutoFocus(false)
+            editbox:SetWidth(60)
+            editbox:SetHeight(20)
+            editbox:SetPoint("TOPRIGHT", -36, y)
+            editbox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+            editbox:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+            controls[def.key] = { editbox = editbox }
+            y = y - 34
+        end
+    end
+
+    local applyButton = CreateFrame("Button", "MadosaControlApplyButton", frame, "UIPanelButtonTemplate")
+    applyButton:SetWidth(90)
+    applyButton:SetHeight(22)
+    applyButton:SetPoint("BOTTOMLEFT", 20, 46)
+    applyButton:SetText("Apply")
+    applyButton:SetScript("OnClick", MadosaControl_Apply)
+
+    local refreshButton = CreateFrame("Button", "MadosaControlRefreshButton", frame, "UIPanelButtonTemplate")
+    refreshButton:SetWidth(90)
+    refreshButton:SetHeight(22)
+    refreshButton:SetPoint("LEFT", applyButton, "RIGHT", 8, 0)
+    refreshButton:SetText("Refresh")
+    refreshButton:SetScript("OnClick", function()
+        SetStatus("Refreshing...")
+        RequestSettings()
+    end)
+
+    local resetHint = frame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    resetHint:SetPoint("BOTTOMLEFT", 20, 28)
+    resetHint:SetPoint("RIGHT", -20, 0)
+    resetHint:SetJustifyH("LEFT")
+    resetHint:SetText('Use ".madosa reset <key>" in chat to revert a setting to the server config default.')
+    resetHint:SetTextColor(0.6, 0.6, 0.6)
+
+    statusText = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    statusText:SetPoint("BOTTOMLEFT", 20, 12)
+    statusText:SetPoint("RIGHT", -20, 0)
+    statusText:SetJustifyH("LEFT")
+    statusText:SetText("")
+
+    tinsert(UISpecialFrames, "MadosaControlFrame")
+end
+
+----------------------------------------------------------------------------
+-- Incoming messages
+----------------------------------------------------------------------------
+
+local function HandleMessage(message)
+    local fields = split(message)
+    local opcode = table.remove(fields, 1)
+
+    if opcode == "HELLO_ACK" then
+        SetStatus("Connected (protocol " .. (fields[1] or "?") .. ").")
+        RequestSettings()
+    elseif opcode == "SETTINGS_BEGIN" then
+        -- nothing to do; SETTING entries follow
+    elseif opcode == "SETTING" then
+        local key, value = fields[1], fields[2]
+        if key then
+            settings[key] = value
+        end
+    elseif opcode == "SETTINGS_END" then
+        RefreshUI()
+        SetStatus("Loaded current server values.")
+    elseif opcode == "SET_ACK" then
+        local ok, key, valueOrError = fields[1] == "1", fields[2], fields[3]
+        SetStatus(ok and (key .. " = " .. valueOrError) or (key .. ": " .. (valueOrError or "failed")), not ok)
+    elseif opcode == "RESET_ACK" then
+        local ok, key, err = fields[1] == "1", fields[2], fields[3]
+        SetStatus(ok and (key .. " reset to config default.") or (key .. ": " .. (err or "failed")), not ok)
+    elseif opcode == "ERROR" then
+        local code, errorMessage = fields[1], fields[2]
+        SetStatus((code and code ~= "" and (code .. ": ") or "") .. (errorMessage or "error"), true)
+    end
+end
+
+local eventFrame = CreateFrame("Frame")
+eventFrame:RegisterEvent("ADDON_LOADED")
+eventFrame:RegisterEvent("CHAT_MSG_ADDON")
+eventFrame:SetScript("OnEvent", function(self, event, ...)
+    if event == "ADDON_LOADED" then
+        local name = ...
+        if name == "MadosaControl" then
+            BuildFrame()
+        end
+    elseif event == "CHAT_MSG_ADDON" then
+        local prefix, message = ...
+        if prefix == ADDON_PREFIX then
+            HandleMessage(message)
+        end
+    end
+end)
+
+----------------------------------------------------------------------------
+-- Slash command
+----------------------------------------------------------------------------
+
+SLASH_MADOSACONTROL1 = "/madosa"
+SLASH_MADOSACONTROL2 = "/mc"
+SlashCmdList["MADOSACONTROL"] = function()
+    if not frame then return end
+
+    if frame:IsShown() then
+        frame:Hide()
+    else
+        frame:Show()
+        SetStatus("Connecting...")
+        SendCommand("HELLO")
+    end
+end

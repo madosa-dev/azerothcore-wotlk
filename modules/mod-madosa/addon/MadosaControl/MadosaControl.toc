@@ -1,0 +1,8 @@
+## Interface: 30300
+## Title: MadosaControl
+## Notes: Live GM control panel for mod-madosa server settings (no restart needed)
+## Author: madosa
+## Version: 1.0.0
+## SavedVariables: MadosaControlDB
+
+MadosaControl.lua

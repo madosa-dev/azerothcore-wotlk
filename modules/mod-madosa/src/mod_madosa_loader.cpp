@@ -23,6 +23,9 @@ void AddSC_madosa_misc()
     // Add new custom scripts here as they're written.
 }
 
+void AddSC_madosa_settings();
+void AddSC_madosa_command();
+void AddSC_madosa_addon_bridge();
 void AddSC_madosa_profession_xp();
 void AddSC_madosa_autoloot_pet();
 
@@ -30,6 +33,9 @@ void AddSC_madosa_autoloot_pet();
 void Addmod_madosaScripts()
 {
     AddSC_madosa_misc();
+    AddSC_madosa_settings();
+    AddSC_madosa_command();
+    AddSC_madosa_addon_bridge();
     AddSC_madosa_profession_xp();
     AddSC_madosa_autoloot_pet();
 }
