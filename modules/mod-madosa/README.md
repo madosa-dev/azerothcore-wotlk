@@ -53,6 +53,15 @@ are substantial enough to stand on their own).
   every player genuinely sees every profession together; the normal
   2-primary-profession limit still applies via the core's own
   `Trainer::CanTeachSpell()`.
+- **`bank_pet.sql`**: "Bankbot", a companion pet (2000g) that opens your bank
+  window from anywhere - the core's normal `GOSSIP_OPTION_BANKER` ->
+  `SendShowBank()` path, just wired to a companion instead of a stationary
+  NPC. Inspired by Ascension WoW's "Personal Bank" convenience item.
+- **`auction_pet.sql`**: "Auctionbot", a companion pet (2000g) that opens the
+  (neutral - the pet's faction template carries no Alliance/Horde mask, so
+  `AuctionHouseMgr::GetAuctionHouseEntryFromFactionTemplate()` always falls
+  back to the neutral house) auction house from anywhere, same
+  `GOSSIP_OPTION_AUCTIONEER` trick as Bankbot.
 
 ## Live-tunable settings (`MadosaSettings`)
 
