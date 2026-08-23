@@ -37,6 +37,15 @@ are substantial enough to stand on their own).
   logs a one-line `invalid class requirement` warning for trainer 90001; that's
   expected (`Requirement = 0` is what makes the window open for every class)
   and harmless.
+- **`profession_trainer_pet.sql`**: "Craftbot", a companion pet (2000g, sold
+  by the same Special Vendor NPCs) that opens one trainer window teaching
+  every profession at once - not a "pick a profession" menu, one flat list
+  with everything in it (all crafting/gathering professions plus cooking,
+  first aid and fishing). Unlike Classtrainer, profession trainers don't need
+  the `Requirement = 0` workaround - real ones already ship that way - so
+  every player genuinely sees every profession together; the normal
+  2-primary-profession limit still applies via the core's own
+  `Trainer::CanTeachSpell()`.
 
 ## Live-tunable settings (`MadosaSettings`)
 
