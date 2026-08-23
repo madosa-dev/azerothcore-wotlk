@@ -21,16 +21,20 @@
 // player's log that's ready (or on the way) to turn in.
 //
 // "Which quests belong to which instance" is derived once at startup from
-// creature_queststarter/gameobject_queststarter cross-referenced with where
-// those NPCs/objects are actually spawned (creature.map/gameobject.map),
-// keeping only the ones on a real dungeon/raid map - checked against the
-// live Map.dbc data (sMapStore), since this database's map_dbc mirror table
-// isn't populated. The result is also written into creature_queststarter/
-// creature_questender for Questbot's own creature entry, since
-// Creature::hasQuest()/hasInvolvedQuest() (checked by the accept/turn-in
-// opcode handlers) only look at that per-entry table - what's actually
-// *offered* in the gossip window is filtered separately, by map, in
-// OnGossipHello below.
+// creature_queststarter/creature_questender/gameobject_queststarter/
+// gameobject_questender cross-referenced with where those NPCs/objects are
+// actually spawned (creature.map/gameobject.map) - both starter and ender,
+// since plenty of classic dungeon quests are handed out by a hub NPC just
+// outside and only turned in inside, so the starter location alone misses
+// them - keeping only the ones on a real dungeon/raid map, checked against
+// the live Map.dbc data (sMapStore) since this database's map_dbc mirror
+// table isn't populated. The result is also written into
+// creature_queststarter/creature_questender for Questbot's own creature
+// entry, since Creature::hasQuest()/hasInvolvedQuest() (checked by the
+// accept/turn-in opcode handlers) only look at that per-entry table - what's
+// actually *offered* in the gossip window, and what icon is shown over
+// Questbot's head, are filtered separately, by map, in OnGossipHello and
+// GetDialogStatus below.
 //
 // The accept list intentionally skips Player::SatisfyQuestLevel() and the
 // prerequisite-chain checks (SatisfyQuestPreviousQuest/NextChain/PrevChain/
@@ -88,24 +92,23 @@ namespace
         instanceQuestsByMap.clear();
         allInstanceQuestIds.clear();
 
-        if (QueryResult result = WorldDatabase.Query(
-                "SELECT DISTINCT c.map, qs.quest FROM creature_queststarter qs JOIN creature c ON c.id = qs.id"))
-        {
-            do
-            {
-                Field* fields = result->Fetch();
-                IndexIfInstanceQuest(fields[0].Get<uint16>(), fields[1].Get<uint32>());
-            } while (result->NextRow());
-        }
+        char const* queries[] = {
+            "SELECT DISTINCT c.map, qs.quest FROM creature_queststarter qs JOIN creature c ON c.id = qs.id",
+            "SELECT DISTINCT c.map, qe.quest FROM creature_questender qe JOIN creature c ON c.id = qe.id",
+            "SELECT DISTINCT g.map, qs.quest FROM gameobject_queststarter qs JOIN gameobject g ON g.id = qs.id",
+            "SELECT DISTINCT g.map, qe.quest FROM gameobject_questender qe JOIN gameobject g ON g.id = qe.id",
+        };
 
-        if (QueryResult result = WorldDatabase.Query(
-                "SELECT DISTINCT g.map, qs.quest FROM gameobject_queststarter qs JOIN gameobject g ON g.id = qs.id"))
+        for (char const* query : queries)
         {
-            do
+            if (QueryResult result = WorldDatabase.Query(query))
             {
-                Field* fields = result->Fetch();
-                IndexIfInstanceQuest(fields[0].Get<uint16>(), fields[1].Get<uint32>());
-            } while (result->NextRow());
+                do
+                {
+                    Field* fields = result->Fetch();
+                    IndexIfInstanceQuest(fields[0].Get<uint16>(), fields[1].Get<uint32>());
+                } while (result->NextRow());
+            }
         }
 
         // Makes Creature::hasQuest()/hasInvolvedQuest() accept every one of
@@ -146,6 +149,45 @@ class npc_madosa_questbot : public CreatureScript
 {
 public:
     npc_madosa_questbot() : CreatureScript("npc_madosa_questbot") { }
+
+    // Controls the "!"/"?" icon shown over Questbot's head. Without this,
+    // the core would compute it from the full static creature_queststarter/
+    // creature_questender relation (every instance quest in the game), so
+    // the icon would show even outside the matching instance - the whole
+    // point of overriding this is to make the icon respect the same
+    // location rule as the gossip window itself.
+    uint32 GetDialogStatus(Player* player, Creature* /*creature*/) override
+    {
+        if (!InstanceQuestPetEnabled())
+            return DIALOG_STATUS_SCRIPTED_NO_STATUS;
+
+        for (uint32 questId : allInstanceQuestIds)
+            if (player->GetQuestStatus(questId) == QUEST_STATUS_COMPLETE)
+                return DIALOG_STATUS_REWARD;
+
+        if (player->GetMap() && player->GetMap()->IsDungeon())
+        {
+            auto itr = instanceQuestsByMap.find(player->GetMapId());
+            if (itr != instanceQuestsByMap.end())
+            {
+                for (uint32 questId : itr->second)
+                {
+                    if (player->GetQuestStatus(questId) != QUEST_STATUS_NONE)
+                        continue;
+
+                    Quest const* quest = sObjectMgr->GetQuestTemplate(questId);
+                    if (quest && CanOfferInstanceQuest(player, quest))
+                        return DIALOG_STATUS_AVAILABLE;
+                }
+            }
+        }
+
+        for (uint32 questId : allInstanceQuestIds)
+            if (player->GetQuestStatus(questId) == QUEST_STATUS_INCOMPLETE)
+                return DIALOG_STATUS_INCOMPLETE;
+
+        return DIALOG_STATUS_NONE;
+    }
 
     bool OnGossipHello(Player* player, Creature* creature) override
     {

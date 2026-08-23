@@ -38,7 +38,7 @@
 --    up, so the client goes straight to the quest list instead of a generic
 --    gossip window.
 UPDATE `item_template` SET `name` = 'Questbot', `Description` = 'While summoned, this companion offers every quest for the instance you are in, and takes back finished instance quests from anywhere.', `BuyPrice` = 20000000 WHERE `entry` = 33816;
-UPDATE `creature_template` SET `name` = 'Questbot', `npcflag` = 2, `gossip_menu_id` = 900350 WHERE `entry` = 24388;
+UPDATE `creature_template` SET `name` = 'Questbot', `npcflag` = 2, `gossip_menu_id` = 900350, `ScriptName` = 'npc_madosa_questbot' WHERE `entry` = 24388;
 
 -- 2) Fallback text for when there's nothing to offer right now (not inside
 --    an instance, and not carrying any instance quest to turn in) - no
