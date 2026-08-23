@@ -175,12 +175,17 @@ namespace Trainer
         // check ranks
         bool hasLearnSpellEffect = false;
         bool knowsAllLearnedSpells = true;
+        bool needsFreePrimaryProfessionSlot = false;
         for (SpellEffectInfo const& spellEffectInfo : sSpellMgr->AssertSpellInfo(trainerSpell->SpellId)->GetEffects())
         {
             if (!spellEffectInfo.IsEffect(SPELL_EFFECT_LEARN_SPELL))
                 continue;
 
             hasLearnSpellEffect = true;
+            SpellInfo const* learnedSpellInfo = sSpellMgr->GetSpellInfo(spellEffectInfo.TriggerSpell);
+            if (learnedSpellInfo && learnedSpellInfo->IsPrimaryProfessionFirstRank())
+                needsFreePrimaryProfessionSlot = true;
+
             if (!player->HasSpell(spellEffectInfo.TriggerSpell))
                 knowsAllLearnedSpells = false;
 
@@ -197,6 +202,13 @@ namespace Trainer
         }
         else if (knowsAllLearnedSpells)
             return SpellState::Known;
+
+        // a new primary profession can't be bought once both primary slots are full - mirrors
+        // the check Trainer::CanTeachSpell() already makes at purchase time, just applied to the
+        // displayed state too (otherwise a maxed-out player still sees every other primary
+        // profession's first rank as buyable until they actually try to buy it)
+        if (needsFreePrimaryProfessionSlot && !player->GetFreePrimaryProfessionPoints())
+            return SpellState::Unavailable;
 
         // check additional spell requirement
         for (auto const& requirePair : sSpellMgr->GetSpellsRequiredForSpellBounds(trainerSpell->SpellId))
