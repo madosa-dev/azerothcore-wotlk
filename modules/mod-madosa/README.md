@@ -62,6 +62,17 @@ are substantial enough to stand on their own).
   `AuctionHouseMgr::GetAuctionHouseEntryFromFactionTemplate()` always falls
   back to the neutral house) auction house from anywhere, same
   `GOSSIP_OPTION_AUCTIONEER` trick as Bankbot.
+- **`src/mod_madosa_account_companions.cpp`**: makes all five companion pets
+  account-wide - once any character on the account has learned one (used the
+  item bought from the Special Vendor), every other character on that
+  account knows it too from their next login on, no extra purchase and no
+  client changes needed. The WotLK client's own Pets/Companions tab already
+  lists whatever the character currently knows, so this doesn't need a
+  custom "vanity" browser window the way Ascension WoW built one - we get
+  the same account-wide result just by granting the spell server-side on
+  login instead. Tracked in the `account_companion_pets` characters-DB
+  table, keyed by the item's real companion-teach spell id. See
+  `Madosa.AccountCompanions.Enable`.
 
 ## Live-tunable settings (`MadosaSettings`)
 

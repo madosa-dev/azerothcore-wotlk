@@ -79,6 +79,18 @@ Madosa.ProfessionTools.Enable = 1
 #
 Madosa.AutoLootPet.Enable = 1
 
+# Madosa.AccountCompanions.Enable
+#
+#        Description: Makes the companion pets (Lootbot, Classtrainer, Craftbot, Bankbot,
+#                     Auctionbot) account-wide - once any character on the account has
+#                     learned one, every other character on that account knows it too
+#                     from their next login on, no extra purchase needed.
+#
+#        Default:     1 - Enabled
+#                     0 - Disabled
+#
+Madosa.AccountCompanions.Enable = 1
+
 # Madosa.Addon.Enable
 #
 #        Description: Lets the MadosaControl client addon read and change the
