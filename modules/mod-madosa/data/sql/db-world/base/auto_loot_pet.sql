@@ -18,25 +18,29 @@ UPDATE `creature_template` SET `name` = 'Lootbot' WHERE `entry` = 16549;
 -- 2) Special Vendor creature templates (one per capital city)
 DELETE FROM `creature_template` WHERE `entry` IN (900300,900301,900302,900303,900304,900305,900306,900307);
 INSERT INTO `creature_template` (`entry`,`difficulty_entry_1`,`difficulty_entry_2`,`difficulty_entry_3`,`KillCredit1`,`KillCredit2`,`name`,`subname`,`gossip_menu_id`,`minlevel`,`maxlevel`,`exp`,`faction`,`npcflag`,`speed_walk`,`speed_run`,`speed_swim`,`speed_flight`,`detection_range`,`rank`,`dmgschool`,`DamageModifier`,`BaseAttackTime`,`RangeAttackTime`,`BaseVariance`,`RangeVariance`,`unit_class`,`unit_flags`,`unit_flags2`,`dynamicflags`,`family`,`type`,`type_flags`,`lootid`,`pickpocketloot`,`skinloot`,`PetSpellDataId`,`VehicleId`,`mingold`,`maxgold`,`AIName`,`MovementType`,`HoverHeight`,`HealthModifier`,`ManaModifier`,`ArmorModifier`,`ExperienceModifier`,`RacialLeader`,`movementId`,`RegenHealth`,`CreatureImmunitiesId`,`flags_extra`,`ScriptName`) VALUES
-(900300,0,0,0,0,0,'Special Vendor','Lootbot',900300,1,1,0,12,129,1,1.14286,1,1,20,0,0,1,0,0,1,1,1,0,2048,0,0,7,0,0,0,0,0,0,0,0,'',0,1,1,1,1,1,0,0,1,0,0,''),
-(900301,0,0,0,0,0,'Special Vendor','Lootbot',900300,1,1,0,29,129,1,1.14286,1,1,20,0,0,1,0,0,1,1,1,0,2048,0,0,7,0,0,0,0,0,0,0,0,'',0,1,1,1,1,1,0,0,1,0,0,''),
-(900302,0,0,0,0,0,'Special Vendor','Lootbot',900300,1,1,0,55,129,1,1.14286,1,1,20,0,0,1,0,0,1,1,1,0,2048,0,0,7,0,0,0,0,0,0,0,0,'',0,1,1,1,1,1,0,0,1,0,0,''),
-(900303,0,0,0,0,0,'Special Vendor','Lootbot',900300,1,1,0,80,129,1,1.14286,1,1,20,0,0,1,0,0,1,1,1,0,2048,0,0,7,0,0,0,0,0,0,0,0,'',0,1,1,1,1,1,0,0,1,0,0,''),
-(900304,0,0,0,0,0,'Special Vendor','Lootbot',900300,1,1,0,68,129,1,1.14286,1,1,20,0,0,1,0,0,1,1,1,0,2048,0,0,7,0,0,0,0,0,0,0,0,'',0,1,1,1,1,1,0,0,1,0,0,''),
-(900305,0,0,0,0,0,'Special Vendor','Lootbot',900300,1,1,0,104,129,1,1.14286,1,1,20,0,0,1,0,0,1,1,1,0,2048,0,0,7,0,0,0,0,0,0,0,0,'',0,1,1,1,1,1,0,0,1,0,0,''),
-(900306,0,0,0,0,0,'Special Vendor','Lootbot',900300,1,1,0,1604,129,1,1.14286,1,1,20,0,0,1,0,0,1,1,1,0,2048,0,0,7,0,0,0,0,0,0,0,0,'',0,1,1,1,1,1,0,0,1,0,0,''),
-(900307,0,0,0,0,0,'Special Vendor','Lootbot',900300,1,1,0,1638,129,1,1.14286,1,1,20,0,0,1,0,0,1,1,1,0,2048,0,0,7,0,0,0,0,0,0,0,0,'',0,1,1,1,1,1,0,0,1,0,0,'');
+(900300,0,0,0,0,0,'Special Vendor','Black Market Dealer',900300,1,1,0,12,129,1,1.14286,1,1,20,0,0,1,0,0,1,1,1,0,2048,0,0,7,0,0,0,0,0,0,0,0,'',0,1,1,1,1,1,0,0,1,0,0,''),
+(900301,0,0,0,0,0,'Special Vendor','Black Market Dealer',900300,1,1,0,29,129,1,1.14286,1,1,20,0,0,1,0,0,1,1,1,0,2048,0,0,7,0,0,0,0,0,0,0,0,'',0,1,1,1,1,1,0,0,1,0,0,''),
+(900302,0,0,0,0,0,'Special Vendor','Black Market Dealer',900300,1,1,0,55,129,1,1.14286,1,1,20,0,0,1,0,0,1,1,1,0,2048,0,0,7,0,0,0,0,0,0,0,0,'',0,1,1,1,1,1,0,0,1,0,0,''),
+(900303,0,0,0,0,0,'Special Vendor','Black Market Dealer',900300,1,1,0,80,129,1,1.14286,1,1,20,0,0,1,0,0,1,1,1,0,2048,0,0,7,0,0,0,0,0,0,0,0,'',0,1,1,1,1,1,0,0,1,0,0,''),
+(900304,0,0,0,0,0,'Special Vendor','Black Market Dealer',900300,1,1,0,68,129,1,1.14286,1,1,20,0,0,1,0,0,1,1,1,0,2048,0,0,7,0,0,0,0,0,0,0,0,'',0,1,1,1,1,1,0,0,1,0,0,''),
+(900305,0,0,0,0,0,'Special Vendor','Black Market Dealer',900300,1,1,0,104,129,1,1.14286,1,1,20,0,0,1,0,0,1,1,1,0,2048,0,0,7,0,0,0,0,0,0,0,0,'',0,1,1,1,1,1,0,0,1,0,0,''),
+(900306,0,0,0,0,0,'Special Vendor','Black Market Dealer',900300,1,1,0,1604,129,1,1.14286,1,1,20,0,0,1,0,0,1,1,1,0,2048,0,0,7,0,0,0,0,0,0,0,0,'',0,1,1,1,1,1,0,0,1,0,0,''),
+(900307,0,0,0,0,0,'Special Vendor','Black Market Dealer',900300,1,1,0,1638,129,1,1.14286,1,1,20,0,0,1,0,0,1,1,1,0,2048,0,0,7,0,0,0,0,0,0,0,0,'',0,1,1,1,1,1,0,0,1,0,0,'');
 
+-- Same model at every location: display 26779 is Shifty Vickers' (Dalaran's
+-- own black-market dealer, entry 30137) - an existing, already-rendered
+-- WotLK model, so this needs no client patch and carries none of the risk a
+-- custom Ascension model does.
 DELETE FROM `creature_template_model` WHERE `CreatureID` IN (900300,900301,900302,900303,900304,900305,900306,900307);
 INSERT INTO `creature_template_model` (`CreatureID`,`Idx`,`CreatureDisplayID`,`DisplayScale`,`Probability`) VALUES
-(900300,0,2072,1,1),
-(900301,0,9470,1,1),
-(900302,0,1362,1,1),
-(900303,0,1285,1,1),
-(900304,0,1582,1,1),
-(900305,0,3808,1,1),
-(900306,0,15516,1,1),
-(900307,0,16203,1,1);
+(900300,0,26779,1,1),
+(900301,0,26779,1,1),
+(900302,0,26779,1,1),
+(900303,0,26779,1,1),
+(900304,0,26779,1,1),
+(900305,0,26779,1,1),
+(900306,0,26779,1,1),
+(900307,0,26779,1,1);
 
 -- 3) Explicit gossip menu (see mod-madosa's mount vendor for why: an
 --    OptionType this specific, matched to OptionNpcFlag = VENDOR, is what
