@@ -101,6 +101,15 @@ are substantial enough to stand on their own).
   granting the spell server-side on login gets the same result. Tracked in
   the `account_companion_pets` characters-DB table, keyed by spell id. See
   `Madosa.AccountCompanions.Enable`.
+- **`profession_slot_scroll.sql`** + `src/mod_madosa_profession_slots.cpp`:
+  "Scroll of Professions" (item 90001, 5000g, sold at the same 8 Special
+  Vendor NPCs as the companion pets), consumed to grant a character one
+  further primary profession slot past the server's usual limit, up to
+  `Madosa.ProfessionSlots.Max`. Also a Vanity item, but deliberately not
+  account-wide: it doesn't teach a spell via the learn-spell convention (a
+  profession slot is per-character by nature), so
+  `mod_madosa_account_companions.cpp` never picks it up. See
+  `Madosa.ProfessionSlots.Enable`.
 
 ## Live-tunable settings (`MadosaSettings`)
 
