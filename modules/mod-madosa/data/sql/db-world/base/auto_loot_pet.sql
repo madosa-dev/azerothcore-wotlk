@@ -57,8 +57,11 @@ DELETE FROM `gossip_menu_option` WHERE `MenuID` = 900300;
 INSERT INTO `gossip_menu_option` (`MenuID`,`OptionID`,`OptionIcon`,`OptionText`,`OptionBroadcastTextID`,`OptionType`,`OptionNpcFlag`,`ActionMenuID`,`ActionPoiID`,`BoxCoded`,`BoxMoney`,`BoxText`,`BoxBroadcastTextID`) VALUES
 (900300,0,1,'I want to browse your goods.',0,3,128,0,0,0,0,'',0);
 
--- 4) Vendor stock: the companion, 1000g (BuyPrice above), same at every location
-DELETE FROM `npc_vendor` WHERE `entry` IN (900300,900301,900302,900303,900304,900305,900306,900307);
+-- 4) Vendor stock: the companion, 1000g (BuyPrice above), same at every location.
+--    Scoped to this item - class_trainer_pet.sql and friends add their own
+--    slots to these same 8 NPCs, and an unscoped DELETE here would wipe those
+--    out every time this file alone gets re-applied.
+DELETE FROM `npc_vendor` WHERE `entry` IN (900300,900301,900302,900303,900304,900305,900306,900307) AND `item` = 23015;
 INSERT INTO `npc_vendor` (`entry`,`slot`,`item`,`maxcount`,`incrtime`,`ExtendedCost`) VALUES
 (900300,1,23015,0,0,0),
 (900301,1,23015,0,0,0),
