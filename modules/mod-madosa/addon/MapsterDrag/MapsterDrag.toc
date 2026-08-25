@@ -1,0 +1,9 @@
+## Interface: 30300
+## Title: Mapster Drag
+## Notes: Lets you drag the world map by its map area, not just the thin border.
+## Author: madosa
+## Version: 1.0.0
+## OptionalDeps: Mapster
+## SavedVariables: MapsterDragDB
+
+MapsterDrag.lua
