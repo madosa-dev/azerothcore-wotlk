@@ -54,13 +54,26 @@ INSERT INTO `trainer` (`Id`,`Type`,`Requirement`,`Greeting`) VALUES
 DELETE FROM `creature_default_trainer` WHERE `CreatureId` = 28883;
 INSERT INTO `creature_default_trainer` (`CreatureId`,`TrainerId`) VALUES (28883,90002);
 
--- 4) Trainer spells: the union of every profession's own canonical trainer
---    (picked as the "Grand Master" trainer for each profession - already
---    the complete Apprentice-through-Grand-Master recipe list on this
---    dataset, exactly like the class trainers, so no need to also pull in
---    the lower-tier trainers separately), deduplicated by SpellId. Kept as a
---    SELECT off the existing data instead of literal values so it stays
---    correct if the base trainer_spell data ever changes.
+-- 4) Trainer spells: the union of every profession trainer's list, deduplicated
+--    by SpellId, taking the most permissive requirement wherever the same spell
+--    appears at several trainers.
+--
+--    This used to pull only the "Grand Master" trainer of each profession, on
+--    the assumption that it already carries the whole Apprentice-through-Grand-
+--    Master list. That holds for twelve professions but not for Alchemy and
+--    Enchanting: their Grand Master trainers start at ReqSkillRank 50 and 350
+--    respectively, so the rank-0 spell that teaches the profession itself
+--    (2275 Alchemy, 7414 Enchanting) was missing and neither could be learned
+--    from scratch. Every tier is therefore included now.
+--
+--    Specialisation trainers are deliberately excluded - Dragonscale/Elemental/
+--    Tribal Leatherworking and Gnome/Goblin Engineering are normally quest-gated
+--    and mutually exclusive, and folding them in would hand out all of them at
+--    once. The anchored pattern below only matches the plain, Master and Grand
+--    Master tiers.
+--
+--    Kept as a SELECT off the existing data instead of literal values so it
+--    stays correct if the base trainer_spell data ever changes.
 DELETE FROM `trainer_spell` WHERE `TrainerId` = 90002;
 INSERT INTO `trainer_spell` (`TrainerId`,`SpellId`,`MoneyCost`,`ReqSkillLine`,`ReqSkillRank`,`ReqAbility1`,`ReqAbility2`,`ReqAbility3`,`ReqLevel`)
 SELECT 90002, `SpellId`, MIN(`MoneyCost`), MIN(`ReqSkillLine`), MIN(`ReqSkillRank`), MIN(`ReqAbility1`), MIN(`ReqAbility2`), MIN(`ReqAbility3`), MIN(`ReqLevel`)
@@ -69,13 +82,11 @@ WHERE `TrainerId` IN (
     SELECT DISTINCT cdt.`TrainerId`
     FROM `creature_template` ct
     JOIN `creature_default_trainer` cdt ON cdt.`CreatureId` = ct.`entry`
-    WHERE ct.`subname` IN (
-        'Grand Master Alchemy Trainer','Grand Master Blacksmithing Trainer','Grand Master Cooking Trainer',
-        'Grand Master Enchanting Trainer','Grand Master Engineering Trainer','Grand Master First Aid Trainer',
-        'Grand Master Fishing Trainer','Grand Master Fishing Trainer & Supplies','Grand Master Herbalism Trainer',
-        'Grand Master Inscription Trainer','Grand Master Jewelcrafting Trainer','Grand Master Leatherworking Trainer',
-        'Grand Master Mining Trainer','Grand Master Skinning Trainer','Grand Master Tailoring Trainer'
-    )
+    WHERE ct.`subname` REGEXP CONCAT(
+        '^(Grand Master |Master )?',
+        '(Alchemy|Blacksmithing|Cooking|Enchanting|Engineering|First Aid|Fishing|',
+        'Herbalism|Inscription|Jewelcrafting|Leatherworking|Mining|Skinning|Tailoring)',
+        ' Trainer( & Supplies)?$')
 )
 GROUP BY `SpellId`;
 
