@@ -46,6 +46,11 @@ namespace MadosaSettings
     float GetProfessionXPPercent();
     uint32 GetProfessionXPSkillMultiplier();
     bool GetAutoLootPetEnable();
+    bool GetProfessionToolsEnable();
+    bool GetAccountCompanionsEnable();
+    bool GetInstanceQuestPetEnable();
+    bool GetProfessionSlotsEnable();
+    uint32 GetProfessionSlotsMax();
 
     // Parses and applies value for key, persisting it to the DB override
     // table. Returns false (and fills outError) if key is unknown or value

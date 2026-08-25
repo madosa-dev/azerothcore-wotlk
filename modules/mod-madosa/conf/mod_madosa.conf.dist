@@ -8,13 +8,27 @@
 # mod-madosa Configuration
 ########################################
 #
-# The values below are only the install-time defaults. A GM can change any of
-# them at any time, with no server restart, either with the ".madosa" chat
-# commands (".madosa status" / ".madosa set <key> <value>" / ".madosa reset
-# <key>") or from the MadosaControl client addon (see
-# modules/mod-madosa/addon/MadosaControl). Changes are stored in the
-# mod_madosa_settings world DB table and survive restarts; ".madosa reset
-# <key>" reverts a setting back to the value configured here.
+# The values below are only the install-time defaults. A GM can change every
+# one of them - except Madosa.Addon.Enable, see below - at any time, with no
+# server restart, either with the ".madosa" chat commands (".madosa status" /
+# ".madosa set <key> <value>" / ".madosa reset <key>") or from the
+# MadosaControl client addon (see modules/mod-madosa/addon/MadosaControl).
+# Changes are stored in the mod_madosa_settings world DB table and survive
+# restarts; ".madosa reset <key>" reverts a setting back to the value
+# configured here.
+#
+# Each setting has a shorter runtime key used by ".madosa set/reset" and by the
+# addon. For the on/off toggles it is the config name lowercased without the
+# "Madosa." prefix (Madosa.InstanceQuestPet.Enable -> instancequestpet.enable);
+# the numeric settings use abbreviated names:
+#
+#     Madosa.ProfessionXP.PercentOfLevelXP    -> professionxp.percent
+#     Madosa.ProfessionXP.SkillGainMultiplier -> professionxp.skillmultiplier
+#     Madosa.ProfessionSlots.Max              -> professionslots.max
+#
+# ".madosa status" always prints the authoritative list. Keep the ".enable"
+# suffix for new on/off toggles - MadosaControl renders a checkbox for those
+# and an input box for everything else.
 #
 
 # Madosa.ProfessionXP.Enable
@@ -69,7 +83,7 @@ Madosa.ProfessionTools.Enable = 1
 
 # Madosa.AutoLootPet.Enable
 #
-#        Description: While a player has the "Loot Rat" companion (sold for 1000g by the
+#        Description: While a player has the "Lootbot" companion (sold for 1000g by the
 #                     Special Vendor in every capital city) summoned, their kills auto-loot
 #                     everything they'd be allowed to take themselves - items still under a
 #                     pending need/greed roll are left for the player to handle normally.
@@ -104,6 +118,31 @@ Madosa.AccountCompanions.Enable = 1
 #
 Madosa.InstanceQuestPet.Enable = 1
 
+# Madosa.ProfessionSlots.Enable
+#
+#        Description: Enables the "Scroll of Professions" (item 90001). Consuming one
+#                     grants the character a further primary profession slot, on top of
+#                     the server's MaxPrimaryTradeSkill. How many scrolls a character
+#                     has used is kept in the mod_madosa_profession_slots table and
+#                     re-applied on every login, because WotLK derives the free-slot
+#                     counter from scratch each time instead of storing it.
+#
+#        Default:     1 - Enabled
+#                     0 - Disabled
+#
+Madosa.ProfessionSlots.Enable = 1
+
+# Madosa.ProfessionSlots.Max
+#
+#        Description: Upper limit for the total number of primary professions a single
+#                     character may end up with, scrolls included. Further scrolls
+#                     refuse to be consumed once it is reached. Values at or below the
+#                     server's MaxPrimaryTradeSkill make the scroll a no-op.
+#
+#        Default:     5
+#
+Madosa.ProfessionSlots.Max = 5
+
 # Madosa.Addon.Enable
 #
 #        Description: Lets the MadosaControl client addon read and change the
@@ -112,6 +151,11 @@ Madosa.InstanceQuestPet.Enable = 1
 #                     permission (see data/sql/db-auth/base/madosa_settings_rbac.sql) -
 #                     this only turns the bridge itself on or off. Disabling
 #                     it does not affect the ".madosa" chat commands.
+#
+#                     Deliberately NOT runtime-tunable: it gates the very
+#                     channel MadosaControl talks through, so switching it off
+#                     from the panel would lock the panel out. Change it here
+#                     and restart, or use the ".madosa" chat commands.
 #
 #        Default:     1 - Enabled
 #                     0 - Disabled

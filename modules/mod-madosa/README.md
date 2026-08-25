@@ -92,10 +92,26 @@ are substantial enough to stand on their own).
 
 ## Live-tunable settings (`MadosaSettings`)
 
-The knobs a GM might want to tweak while the server is running - currently
-profession XP (enable, `%` of level XP per attempt, skill-up multiplier) and
-the Lootbot auto-loot pet toggle - are **not** read straight from the config
-file. They go through `MadosaSettings` (`src/mod_madosa_settings.h`), a small
+Every knob a GM might want to tweak while the server is running is **not**
+read straight from the config file:
+
+| Runtime key | Config key | Type |
+|---|---|---|
+| `professionxp.enable` | `Madosa.ProfessionXP.Enable` | on/off |
+| `professionxp.percent` | `Madosa.ProfessionXP.PercentOfLevelXP` | number, 0-100 |
+| `professionxp.skillmultiplier` | `Madosa.ProfessionXP.SkillGainMultiplier` | number, 1-100 |
+| `autolootpet.enable` | `Madosa.AutoLootPet.Enable` | on/off |
+| `professiontools.enable` | `Madosa.ProfessionTools.Enable` | on/off |
+| `accountcompanions.enable` | `Madosa.AccountCompanions.Enable` | on/off |
+| `instancequestpet.enable` | `Madosa.InstanceQuestPet.Enable` | on/off |
+| `professionslots.enable` | `Madosa.ProfessionSlots.Enable` | on/off |
+| `professionslots.max` | `Madosa.ProfessionSlots.Max` | number, 1-20 |
+
+`Madosa.Addon.Enable` is deliberately absent: it gates the bridge MadosaControl
+talks through, so exposing it there would let the panel lock itself out. Change
+it in the conf file and restart, or use the `.madosa` chat commands.
+
+These all go through `MadosaSettings`. They go through `MadosaSettings` (`src/mod_madosa_settings.h`), a small
 runtime store that is:
 
 - seeded from `mod_madosa.conf.dist` on startup (`WorldScript::OnStartup`),
@@ -112,15 +128,26 @@ Both the chat command and the addon require the `Command: madosa` RBAC
 permission (id 1001, granted to the "Gamemaster Commands" role by
 `data/sql/db-auth/base/madosa_settings_rbac.sql`).
 
-When adding a new tunable, wire it into `MadosaSettings` (get/set/reset/list)
-instead of reading `sConfigMgr` directly from the feature script, so it picks
-up the same live-control path automatically.
+When adding a new tunable, wire it into `MadosaSettings` instead of reading
+`sConfigMgr` directly from the feature script, so it picks up the same
+live-control path automatically. A plain on/off toggle is one line in the
+`boolSettings` table in `src/mod_madosa_settings.cpp` - config key, storage
+slot and default - and everything else (startup seeding, DB overrides, set,
+reset, list) follows from it.
+
+**Name on/off keys `<feature>.enable`.** MadosaControl picks its control type
+from that suffix, because guessing from the value would misread a numeric
+setting that happens to sit at 0 or 1 - `professionxp.percent` defaults to
+exactly `1`.
 
 ### MadosaControl addon
 
 `addon/MadosaControl` is a small, standalone WotLK 3.3.5a addon (`/madosa` or
 `/mc` to toggle) with checkboxes/edit boxes for each `MadosaSettings` value
-and an Apply/Refresh button. It talks to the server the same way every other
+and an Apply/Refresh button. It **builds its rows from whatever the server
+sends**, so a setting added to `MadosaSettings` shows up without touching the
+addon. The only local knowledge is a label lookup, and an unknown key falls
+back to a label derived from the key itself. It talks to the server the same way every other
 WotLK GM-addon bridge does: a self-whisper (`SendAddonMessage(prefix, msg,
 "WHISPER", UnitName("player"))`) tagged `LANG_ADDON`, intercepted server-side
 in `PlayerScript::OnPlayerCanUseChat` before it would otherwise bounce back as

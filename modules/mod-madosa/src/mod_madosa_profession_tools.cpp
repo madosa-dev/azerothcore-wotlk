@@ -27,10 +27,10 @@
 // Crafting professions don't need a tool in their bags, only gathering ones
 // (Herbalism doesn't either - you just need the skill).
 
-#include "Config.h"
 #include "Player.h"
 #include "ScriptMgr.h"
 #include "SharedDefines.h"
+#include "mod_madosa_settings.h"
 
 namespace
 {
@@ -59,7 +59,7 @@ namespace
 
     void GrantKnownProfessionTools(Player* player)
     {
-        if (!sConfigMgr->GetOption<bool>("Madosa.ProfessionTools.Enable", true))
+        if (!MadosaSettings::GetProfessionToolsEnable())
             return;
 
         for (ProfessionTool const& tool : PROFESSION_TOOLS)

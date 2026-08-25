@@ -32,11 +32,11 @@
 // Player::learnSpell() calls the hook for every caller (item use, trainer,
 // quest reward, ...), not just these companions specifically.
 
-#include "Config.h"
 #include "CharacterDatabase.h"
 #include "Player.h"
 #include "ScriptMgr.h"
 #include "WorldSession.h"
+#include "mod_madosa_settings.h"
 
 #include <array>
 
@@ -59,7 +59,7 @@ namespace
 
     bool AccountCompanionsEnabled()
     {
-        return sConfigMgr->GetOption<bool>("Madosa.AccountCompanions.Enable", true);
+        return MadosaSettings::GetAccountCompanionsEnable();
     }
 
     // Grants any companion the account already owns but this character

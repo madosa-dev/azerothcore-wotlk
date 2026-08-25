@@ -51,7 +51,6 @@
 // still gets the standard rejection message instead of silently breaking
 // something.
 
-#include "Config.h"
 #include "Creature.h"
 #include "CreatureScript.h"
 #include "DBCStores.h"
@@ -65,6 +64,7 @@
 #include "QuestDef.h"
 #include "ScriptMgr.h"
 #include "WorldDatabase.h"
+#include "mod_madosa_settings.h"
 
 #include <algorithm>
 #include <sstream>
@@ -81,7 +81,7 @@ namespace
 
     bool InstanceQuestPetEnabled()
     {
-        return sConfigMgr->GetOption<bool>("Madosa.InstanceQuestPet.Enable", true);
+        return MadosaSettings::GetInstanceQuestPetEnable();
     }
 
     void IndexIfInstanceQuest(uint32 mapId, uint32 questId)

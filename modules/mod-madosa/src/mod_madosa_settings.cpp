@@ -41,6 +41,41 @@ namespace
     std::atomic<float> professionXPPercent{1.0f};
     std::atomic<uint32> professionXPSkillMultiplier{2};
     std::atomic<bool> autoLootPetEnable{true};
+    std::atomic<bool> professionToolsEnable{true};
+    std::atomic<bool> accountCompanionsEnable{true};
+    std::atomic<bool> instanceQuestPetEnable{true};
+    std::atomic<bool> professionSlotsEnable{true};
+    std::atomic<uint32> professionSlotsMax{5};
+
+    // Every feature toggle behaves identically, so they share one table instead
+    // of repeating the same parse/validate/store block per key. Madosa.Addon.Enable
+    // is deliberately absent: it gates the bridge this panel talks through, so
+    // switching it off from the panel would lock the panel out of the server.
+    struct BoolSetting
+    {
+        char const* key;
+        char const* configKey;
+        std::atomic<bool>* slot;
+        bool configDefault;
+    };
+
+    BoolSetting const boolSettings[] =
+    {
+        { "professionxp.enable",      "Madosa.ProfessionXP.Enable",        &professionXPEnable,      true },
+        { "autolootpet.enable",       "Madosa.AutoLootPet.Enable",         &autoLootPetEnable,       true },
+        { "professiontools.enable",   "Madosa.ProfessionTools.Enable",     &professionToolsEnable,   true },
+        { "accountcompanions.enable", "Madosa.AccountCompanions.Enable",   &accountCompanionsEnable, true },
+        { "instancequestpet.enable",  "Madosa.InstanceQuestPet.Enable",    &instanceQuestPetEnable,  true },
+        { "professionslots.enable",   "Madosa.ProfessionSlots.Enable",     &professionSlotsEnable,   true },
+    };
+
+    BoolSetting const* FindBoolSetting(std::string const& key)
+    {
+        for (BoolSetting const& setting : boolSettings)
+            if (key == setting.key)
+                return &setting;
+        return nullptr;
+    }
 
     bool ParseBool(std::string const& value, bool& out)
     {
@@ -112,10 +147,12 @@ namespace
 
     void LoadConfigDefaults()
     {
-        professionXPEnable = sConfigMgr->GetOption<bool>("Madosa.ProfessionXP.Enable", true);
+        for (BoolSetting const& setting : boolSettings)
+            *setting.slot = sConfigMgr->GetOption<bool>(setting.configKey, setting.configDefault);
+
         professionXPPercent = sConfigMgr->GetOption<float>("Madosa.ProfessionXP.PercentOfLevelXP", 1.0f);
         professionXPSkillMultiplier = sConfigMgr->GetOption<uint32>("Madosa.ProfessionXP.SkillGainMultiplier", 2);
-        autoLootPetEnable = sConfigMgr->GetOption<bool>("Madosa.AutoLootPet.Enable", true);
+        professionSlotsMax = sConfigMgr->GetOption<uint32>("Madosa.ProfessionSlots.Max", 5);
     }
 
     void LoadOverridesFromDB()
@@ -133,14 +170,14 @@ namespace
             bool b;
             float f;
             uint32 u;
-            if (key == "professionxp.enable" && ParseBool(value, b))
-                professionXPEnable = b;
+            if (BoolSetting const* setting = FindBoolSetting(key); setting && ParseBool(value, b))
+                *setting->slot = b;
             else if (key == "professionxp.percent" && ParseFloat(value, f))
                 professionXPPercent = f;
             else if (key == "professionxp.skillmultiplier" && ParseUInt(value, u))
                 professionXPSkillMultiplier = u;
-            else if (key == "autolootpet.enable" && ParseBool(value, b))
-                autoLootPetEnable = b;
+            else if (key == "professionslots.max" && ParseUInt(value, u))
+                professionSlotsMax = u;
             else
                 LOG_ERROR("module", "mod-madosa: ignoring stored setting {}={} (unknown key or invalid value)", key, value);
         } while (result->NextRow());
@@ -153,6 +190,11 @@ namespace MadosaSettings
     float GetProfessionXPPercent() { return professionXPPercent.load(); }
     uint32 GetProfessionXPSkillMultiplier() { return std::max<uint32>(1, professionXPSkillMultiplier.load()); }
     bool GetAutoLootPetEnable() { return autoLootPetEnable.load(); }
+    bool GetProfessionToolsEnable() { return professionToolsEnable.load(); }
+    bool GetAccountCompanionsEnable() { return accountCompanionsEnable.load(); }
+    bool GetInstanceQuestPetEnable() { return instanceQuestPetEnable.load(); }
+    bool GetProfessionSlotsEnable() { return professionSlotsEnable.load(); }
+    uint32 GetProfessionSlotsMax() { return std::max<uint32>(1, professionSlotsMax.load()); }
 
     void Init()
     {
@@ -162,7 +204,7 @@ namespace MadosaSettings
 
     bool Set(std::string const& key, std::string const& value, std::string& outError)
     {
-        if (key == "professionxp.enable")
+        if (BoolSetting const* setting = FindBoolSetting(key))
         {
             bool b;
             if (!ParseBool(value, b))
@@ -170,7 +212,7 @@ namespace MadosaSettings
                 outError = "value must be 0 or 1";
                 return false;
             }
-            professionXPEnable = b;
+            *setting->slot = b;
         }
         else if (key == "professionxp.percent")
         {
@@ -192,15 +234,17 @@ namespace MadosaSettings
             }
             professionXPSkillMultiplier = u;
         }
-        else if (key == "autolootpet.enable")
+        else if (key == "professionslots.max")
         {
-            bool b;
-            if (!ParseBool(value, b))
+            uint32 u;
+            // Below the server's own primary-profession cap the setting would do
+            // nothing; above ~20 there are no more professions left to learn.
+            if (!ParseUInt(value, u) || u < 1 || u > 20)
             {
-                outError = "value must be 0 or 1";
+                outError = "value must be a whole number between 1 and 20";
                 return false;
             }
-            autoLootPetEnable = b;
+            professionSlotsMax = u;
         }
         else
         {
@@ -214,8 +258,8 @@ namespace MadosaSettings
 
     bool Reset(std::string const& key, std::string& outError)
     {
-        if (key != "professionxp.enable" && key != "professionxp.percent" &&
-            key != "professionxp.skillmultiplier" && key != "autolootpet.enable")
+        if (!FindBoolSetting(key) && key != "professionxp.percent" &&
+            key != "professionxp.skillmultiplier" && key != "professionslots.max")
         {
             outError = "unknown setting key";
             return false;
@@ -229,12 +273,17 @@ namespace MadosaSettings
 
     std::vector<SettingInfo> List()
     {
-        return {
-            { "professionxp.enable", BoolToStr(GetProfessionXPEnable()) },
-            { "professionxp.percent", FloatToStr(GetProfessionXPPercent()) },
-            { "professionxp.skillmultiplier", std::to_string(GetProfessionXPSkillMultiplier()) },
-            { "autolootpet.enable", BoolToStr(GetAutoLootPetEnable()) },
-        };
+        // Order matters only for how the addon lists them: the two numeric
+        // profession settings sit next to their own enable toggle.
+        std::vector<SettingInfo> out;
+        out.push_back({ "professionxp.enable", BoolToStr(GetProfessionXPEnable()) });
+        out.push_back({ "professionxp.percent", FloatToStr(GetProfessionXPPercent()) });
+        out.push_back({ "professionxp.skillmultiplier", std::to_string(GetProfessionXPSkillMultiplier()) });
+        out.push_back({ "professionslots.max", std::to_string(GetProfessionSlotsMax()) });
+        for (BoolSetting const& setting : boolSettings)
+            if (std::string(setting.key) != "professionxp.enable")
+                out.push_back({ setting.key, BoolToStr(setting.slot->load()) });
+        return out;
     }
 }
 
