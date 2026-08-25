@@ -130,3 +130,6 @@ __pycache__/
 !/modules/mod-madosa
 .cache
 compile_commands.json
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
