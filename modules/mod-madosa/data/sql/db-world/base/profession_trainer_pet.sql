@@ -26,7 +26,7 @@
 --    it summons, both renamed to "Craftbot". npcflag 81 = GOSSIP(1) |
 --    TRAINER(16) | TRAINER_PROFESSION(64) - the same combination real
 --    profession trainer NPCs use.
-UPDATE `item_template` SET `name` = 'Craftbot', `Description` = 'While summoned, this companion offers training in every profession - anywhere, anytime.', `BuyPrice` = 20000000 WHERE `entry` = 39286;
+UPDATE `item_template` SET `name` = 'Craftbot', `Description` = 'While summoned, this companion offers training in every profession - anywhere, anytime.', `BuyPrice` = 20000000, `Quality` = 6 WHERE `entry` = 39286;
 UPDATE `creature_template` SET `name` = 'Craftbot', `npcflag` = 81, `gossip_menu_id` = 900320 WHERE `entry` = 28883;
 
 -- 2) Gossip: a single "Train me." option (OptionType 5 = GOSSIP_OPTION_TRAINER,

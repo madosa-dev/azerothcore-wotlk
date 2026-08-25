@@ -15,47 +15,70 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-// Makes the mod-madosa companion pets (Lootbot, Classtrainer, Craftbot,
-// Bankbot, Auctionbot, Questbot) account-wide: once any character on the account has
-// learned one (by using the item bought from the Special Vendor), every
-// other character on that account knows it too, from their next login on -
-// no extra purchase, no client changes. The WotLK client's own "Pets" /
-// Companions tab already lists whatever the character currently knows, so
-// this doesn't need a custom "vanity" browser window - it just shows up
+// Makes every Vanity-quality item (Quality 6 - see the client-side
+// VanityQuality addon for why that slot was repurposed) account-wide: once
+// any character on the account has learned its companion/toy spell (by using
+// the item), every other character on that account knows it too, from their
+// next login on - no extra purchase, no client changes. The WotLK client's
+// own "Pets" / Companions tab already lists whatever the character currently
+// knows, so this doesn't need a custom browser window - it just shows up
 // there like any other companion, the moment the account owns it.
 //
-// Keyed off the item's real companion-teach spell (item_template.spellid_2
-// with spelltrigger_2 = ITEM_SPELLTRIGGER_LEARN_SPELL_ID, see e.g.
-// class_trainer_pet.sql's header comment for why item use teaches that spell
-// rather than the generic "learn a companion" wrapper spell), so this reacts
+// The mod-madosa companion pets (Lootbot, Classtrainer, Craftbot, Bankbot,
+// Auctionbot, Questbot) are Vanity items and get this behavior for free, but
+// it isn't specific to them: any future Vanity item that teaches a spell via
+// the standard item_template spellid_N/spelltrigger_N =
+// ITEM_SPELLTRIGGER_LEARN_SPELL_ID convention (see e.g. class_trainer_pet.sql's
+// header comment for why item use teaches that spell rather than the generic
+// "learn a companion" wrapper spell) is picked up automatically. This reacts
 // to a plain OnPlayerLearnSpell like anything else that grants a spell -
 // Player::learnSpell() calls the hook for every caller (item use, trainer,
-// quest reward, ...), not just these companions specifically.
+// quest reward, ...), not just Vanity items specifically.
 
 #include "CharacterDatabase.h"
+#include "ItemTemplate.h"
 #include "Player.h"
 #include "ScriptMgr.h"
+#include "WorldDatabase.h"
 #include "WorldSession.h"
 #include "mod_madosa_settings.h"
 
-#include <array>
+#include <vector>
 
 namespace
 {
-    struct CompanionPet
-    {
-        char const* name;
-        uint32 spellId;
-    };
+    constexpr uint32 VANITY_QUALITY = 6;
 
-    constexpr std::array<CompanionPet, 6> COMPANION_PETS = {{
-        { "Lootbot", 28740 },
-        { "Classtrainer", 43918 },
-        { "Craftbot", 52615 },
-        { "Bankbot", 45174 },
-        { "Auctionbot", 45175 },
-        { "Questbot", 43697 },
-    }};
+    // Populated once at startup (see mod_madosa_account_companions_world
+    // below) from every Vanity item's learn-spell. A restart is needed to
+    // pick up a newly added Vanity item, same as trainer/quest data.
+    std::vector<uint32> vanityLearnSpells;
+
+    void LoadVanityLearnSpells()
+    {
+        vanityLearnSpells.clear();
+
+        QueryResult result = WorldDatabase.Query(
+            "SELECT spellid_1, spelltrigger_1, spellid_2, spelltrigger_2, spellid_3, spelltrigger_3, "
+            "spellid_4, spelltrigger_4, spellid_5, spelltrigger_5 FROM item_template WHERE Quality = {}",
+            VANITY_QUALITY);
+        if (!result)
+            return;
+
+        do
+        {
+            Field* fields = result->Fetch();
+            for (uint8 slot = 0; slot < MAX_ITEM_PROTO_SPELLS; ++slot)
+            {
+                uint32 spellId = fields[slot * 2].Get<uint32>();
+                uint32 trigger = fields[slot * 2 + 1].Get<uint32>();
+                if (spellId && trigger == ITEM_SPELLTRIGGER_LEARN_SPELL_ID)
+                    vanityLearnSpells.push_back(spellId);
+            }
+        } while (result->NextRow());
+
+        LOG_INFO("module", "mod-madosa: {} vanity companion spell(s) loaded", vanityLearnSpells.size());
+    }
 
     bool AccountCompanionsEnabled()
     {
@@ -73,21 +96,21 @@ namespace
 
         uint32 accountId = player->GetSession()->GetAccountId();
 
-        for (CompanionPet const& companion : COMPANION_PETS)
+        for (uint32 spellId : vanityLearnSpells)
         {
-            if (player->HasSpell(companion.spellId))
+            if (player->HasSpell(spellId))
             {
                 CharacterDatabase.Execute(
                     "INSERT IGNORE INTO account_companion_pets (account_id, spell_id) VALUES ({}, {})",
-                    accountId, companion.spellId);
+                    accountId, spellId);
                 continue;
             }
 
             QueryResult result = CharacterDatabase.Query(
                 "SELECT 1 FROM account_companion_pets WHERE account_id = {} AND spell_id = {}",
-                accountId, companion.spellId);
+                accountId, spellId);
             if (result)
-                player->learnSpell(companion.spellId);
+                player->learnSpell(spellId);
         }
     }
 }
@@ -108,7 +131,19 @@ public:
     }
 };
 
+class mod_madosa_account_companions_world : public WorldScript
+{
+public:
+    mod_madosa_account_companions_world() : WorldScript("mod_madosa_account_companions_world") { }
+
+    void OnStartup() override
+    {
+        LoadVanityLearnSpells();
+    }
+};
+
 void AddSC_madosa_account_companions()
 {
     new mod_madosa_account_companions();
+    new mod_madosa_account_companions_world();
 }

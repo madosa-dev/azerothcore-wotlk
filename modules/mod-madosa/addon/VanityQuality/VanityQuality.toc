@@ -1,0 +1,7 @@
+## Interface: 30300
+## Title: Vanity Quality
+## Notes: Recolors item quality 6 (Artifact, otherwise unused in WotLK) into a distinct "Vanity" quality for account-wide companion/toy items.
+## Author: madosa
+## Version: 1.0.0
+
+VanityQuality.lua

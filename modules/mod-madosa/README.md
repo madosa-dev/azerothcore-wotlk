@@ -78,16 +78,28 @@ are substantial enough to stand on their own).
   runs the full `CanTakeQuest()`, so something that truly isn't takeable yet
   still gets the normal rejection instead of silently breaking. See
   `Madosa.InstanceQuestPet.Enable`.
-- **`src/mod_madosa_account_companions.cpp`**: makes all six companion pets
-  account-wide - once any character on the account has learned one (used the
-  item bought from the Special Vendor), every other character on that
-  account knows it too from their next login on, no extra purchase and no
-  client changes needed. The WotLK client's own Pets/Companions tab already
-  lists whatever the character currently knows, so this doesn't need a
-  custom "vanity" browser window the way Ascension WoW built one - we get
-  the same account-wide result just by granting the spell server-side on
-  login instead. Tracked in the `account_companion_pets` characters-DB
-  table, keyed by the item's real companion-teach spell id. See
+- **Vanity quality (`item_template.Quality = 6`)**: WotLK 3.3.5a never assigns
+  quality 6 ("Artifact") to any obtainable item, so mod-madosa repurposes it
+  as a "Vanity" quality for account-wide companions/toys instead of inventing
+  an out-of-range value the client has never seen. All six companion pets are
+  Vanity items. The `addon/VanityQuality` addon recolors it client-side
+  (magenta by default - see the comment at the top of `VanityQuality.lua` for
+  how, and its documented limits: the tooltip name/border and the in-world
+  loot glow are rendered natively and stay the default Artifact gold, since
+  that path never calls back into Lua).
+- **`src/mod_madosa_account_companions.cpp`**: makes every Vanity item's
+  learn-spell account-wide - once any character on the account has learned
+  one (used the item), every other character on that account knows it too
+  from their next login on, no extra purchase and no client changes needed.
+  Not specific to the six pets: any future item with `Quality = 6` that
+  teaches a spell via the standard `spellid_N`/`spelltrigger_N =
+  ITEM_SPELLTRIGGER_LEARN_SPELL_ID` convention is picked up automatically -
+  the spell list is loaded from `item_template` once at startup (a restart is
+  needed to pick up a newly added Vanity item, same as trainer/quest data).
+  The WotLK client's own Pets/Companions tab already lists whatever the
+  character currently knows, so this doesn't need a custom browser window -
+  granting the spell server-side on login gets the same result. Tracked in
+  the `account_companion_pets` characters-DB table, keyed by spell id. See
   `Madosa.AccountCompanions.Enable`.
 
 ## Live-tunable settings (`MadosaSettings`)

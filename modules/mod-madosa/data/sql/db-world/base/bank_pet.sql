@@ -17,7 +17,7 @@
 -- 1) Repurpose the (currently unsold) Golden Pig Coin item and the critter
 --    it summons, both renamed to "Bankbot". npcflag 131073 = GOSSIP(1) |
 --    BANKER(131072) - the same combination real banker NPCs use.
-UPDATE `item_template` SET `name` = 'Bankbot', `Description` = 'While summoned, this companion gives you access to your bank - anywhere, anytime.', `BuyPrice` = 20000000 WHERE `entry` = 34518;
+UPDATE `item_template` SET `name` = 'Bankbot', `Description` = 'While summoned, this companion gives you access to your bank - anywhere, anytime.', `BuyPrice` = 20000000, `Quality` = 6 WHERE `entry` = 34518;
 UPDATE `creature_template` SET `name` = 'Bankbot', `npcflag` = 131073, `gossip_menu_id` = 900330 WHERE `entry` = 25146;
 
 -- 2) Gossip: a single "I would like to check my deposit box." option

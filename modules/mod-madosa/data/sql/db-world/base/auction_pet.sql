@@ -17,7 +17,7 @@
 -- 1) Repurpose the (currently unsold) Silver Pig Coin item and the critter
 --    it summons, both renamed to "Auctionbot". npcflag 2097153 = GOSSIP(1) |
 --    AUCTIONEER(2097152) - the same combination real auctioneer NPCs use.
-UPDATE `item_template` SET `name` = 'Auctionbot', `Description` = 'While summoned, this companion gives you access to the auction house - anywhere, anytime.', `BuyPrice` = 20000000 WHERE `entry` = 34519;
+UPDATE `item_template` SET `name` = 'Auctionbot', `Description` = 'While summoned, this companion gives you access to the auction house - anywhere, anytime.', `BuyPrice` = 20000000, `Quality` = 6 WHERE `entry` = 34519;
 UPDATE `creature_template` SET `name` = 'Auctionbot', `npcflag` = 2097153, `gossip_menu_id` = 900340 WHERE `entry` = 25147;
 
 -- 2) Gossip: a single "What's on the auction house today?" option

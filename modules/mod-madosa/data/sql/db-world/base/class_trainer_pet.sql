@@ -17,7 +17,7 @@
 -- 1) Repurpose the (currently unsold) Mojo item and the critter it summons,
 --    both renamed to "Classtrainer". npcflag 49 = GOSSIP(1) | TRAINER(16) |
 --    TRAINER_CLASS(32) - the same combination real class trainer NPCs use.
-UPDATE `item_template` SET `name` = 'Classtrainer', `Description` = 'While summoned, this companion offers class training for your class - anywhere, anytime.', `BuyPrice` = 20000000 WHERE `entry` = 33993;
+UPDATE `item_template` SET `name` = 'Classtrainer', `Description` = 'While summoned, this companion offers class training for your class - anywhere, anytime.', `BuyPrice` = 20000000, `Quality` = 6 WHERE `entry` = 33993;
 UPDATE `creature_template` SET `name` = 'Classtrainer', `npcflag` = 49, `gossip_menu_id` = 900310 WHERE `entry` = 24480;
 
 -- 2) Gossip: a single "I require training." option (OptionType 5 =

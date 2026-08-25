@@ -12,7 +12,7 @@
 
 -- 1) Repurpose the (currently unsold) Rat Cage and the critter it summons as
 --    our companion, both renamed to "Lootbot"
-UPDATE `item_template` SET `name` = 'Lootbot', `Description` = 'While summoned, this companion automatically loots anything you could loot yourself.', `BuyPrice` = 10000000 WHERE `entry` = 23015;
+UPDATE `item_template` SET `name` = 'Lootbot', `Description` = 'While summoned, this companion automatically loots anything you could loot yourself.', `BuyPrice` = 10000000, `Quality` = 6 WHERE `entry` = 23015;
 UPDATE `creature_template` SET `name` = 'Lootbot' WHERE `entry` = 16549;
 
 -- 2) Special Vendor creature templates (one per capital city)
