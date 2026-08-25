@@ -23,12 +23,10 @@
 -- without patching the client executable itself.
 
 local VANITY_QUALITY = 6
--- Deliberately more red than blue (hot pink, not violet) so it stays visibly
--- distinct from Epic's purple (#a335ee) even on a thin, anti-aliased icon
--- border - the first attempt (#e64dff) was close enough in hue to read as
--- Epic at that size.
-local R, G, B = 1.00, 0.15, 0.60
-local HEX = "|cffff2699"
+-- Gold/amber, shifted noticeably more yellow than Legendary's pure orange
+-- (#ff8000) so the two stay distinguishable at icon-border size.
+local R, G, B = 1.00, 0.80, 0.10
+local HEX = "|cffffcc1a"
 
 ITEM_QUALITY6_DESC = "Vanity"
 
