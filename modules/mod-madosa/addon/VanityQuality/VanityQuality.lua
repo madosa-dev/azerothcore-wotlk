@@ -23,8 +23,12 @@
 -- without patching the client executable itself.
 
 local VANITY_QUALITY = 6
-local R, G, B = 0.90, 0.30, 1.00
-local HEX = "|cffe64dff"
+-- Deliberately more red than blue (hot pink, not violet) so it stays visibly
+-- distinct from Epic's purple (#a335ee) even on a thin, anti-aliased icon
+-- border - the first attempt (#e64dff) was close enough in hue to read as
+-- Epic at that size.
+local R, G, B = 1.00, 0.15, 0.60
+local HEX = "|cffff2699"
 
 ITEM_QUALITY6_DESC = "Vanity"
 
