@@ -15,6 +15,12 @@ are substantial enough to stand on their own).
 - Small C++ tweaks (a command, a script hook): add a new `.cpp`/`.h` pair
   under `src/`, declare and call its `AddSC_*()` from
   `src/mod_madosa_loader.cpp`.
+- Lua (ALE) scripts: put them in `lua/` - see [`lua/README.md`](lua/README.md).
+  Prefer Lua over C++ for anything you expect to iterate on, since a Lua
+  change needs neither a rebuild nor a restart. Note that `mod-ale` is a
+  diverged Eluna fork with its own API, and that this realm's ~3000
+  playerbots make every player-scoped hook bot-heavy - both are covered
+  there.
 
 ## Current content
 
