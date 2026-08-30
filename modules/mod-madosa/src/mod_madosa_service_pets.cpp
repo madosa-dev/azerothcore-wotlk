@@ -109,23 +109,34 @@ namespace
             return;
         }
 
+        // The money actually spent has to be measured, NOT taken from the return
+        // value: Player::DurabilityRepair() only assigns TotalCost in its guild-bank
+        // branch, so a normal repair paid from the player's own purse always reports
+        // 0 - which is indistinguishable from "could not afford a thing" and made
+        // this claim the player was broke right after charging them.
+        uint32 moneyBefore = player->GetMoney();
+
         // discountMod 1.0f = no reputation discount (the pet has no faction to like
         // you), guildBank false = always the player's own money.
-        uint32 cost = player->DurabilityRepairAll(true, 1.0f, false);
+        player->DurabilityRepairAll(true, 1.0f, false);
 
-        if (!cost)
+        uint32 moneyAfter = player->GetMoney();
+        uint32 spent = moneyBefore > moneyAfter ? moneyBefore - moneyAfter : 0;
+        bool stillDamaged = HasDamagedItems(player);
+
+        if (!spent && stillDamaged)
         {
             handler.PSendSysMessage("You cannot afford the repairs.");
             return;
         }
 
         // DurabilityRepairAll skips (rather than fails on) any single item the player
-        // ran out of money for, so a non-zero cost does not prove everything got fixed.
-        if (HasDamagedItems(player))
+        // ran out of money for, so spending something does not prove everything got fixed.
+        if (stillDamaged)
             handler.PSendSysMessage("Repaired what you could afford, for {} - some items are still damaged.",
-                                    FormatMoney(cost));
+                                    FormatMoney(spent));
         else
-            handler.PSendSysMessage("Equipment fully repaired for {}.", FormatMoney(cost));
+            handler.PSendSysMessage("Equipment fully repaired for {}.", FormatMoney(spent));
     }
 }
 
@@ -179,11 +190,18 @@ public:
 
     bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
     {
-        CloseGossipMenuFor(player);
-
         if (!MadosaSettings::GetMailPetEnable() || action != GOSSIP_ACTION_INFO_DEF)
+        {
+            CloseGossipMenuFor(player);
             return true;
+        }
 
+        // Deliberately NOT closing the gossip menu first: the core never does for an
+        // option that opens a window of its own (see the comment in Omnibot's
+        // OnGossipSelect - doing it there is what stopped the trainer from opening).
+        // Mail happens to tolerate the close, but keeping one rule for both pets
+        // means nobody copies the broken half later.
+        //
         // The creature template already carries GOSSIP|MAILBOX, which is what
         // MailHandler's GetNPCIfCanInteractWith() check needs - so unlike the Argent
         // Pony (which is a vendor/banker/mailbox in turn and has to swap flags for
@@ -249,11 +267,22 @@ public:
 
     bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
     {
-        CloseGossipMenuFor(player);
-
         if (!MadosaSettings::GetOmniPetEnable())
+        {
+            CloseGossipMenuFor(player);
             return true;
+        }
 
+        // Closing the gossip menu first breaks the trainer: PlayerGossip.cpp calls
+        // SendCloseGossip() only for options that just perform an action (INNKEEPER,
+        // PETITIONER, TABARDDESIGNER...) and deliberately NOT for the ones that open
+        // a window of their own - BANKER, AUCTIONEER, VENDOR and TRAINER all leave
+        // the menu alone and let the client swap frames. Sending GOSSIP_COMPLETE
+        // ahead of SMSG_TRAINER_LIST made the client drop the trainer window
+        // entirely, which is why "Train me" appeared to do nothing while bank,
+        // auction and mail survived it. So mirror the core: only the repair option,
+        // which opens nothing, closes the menu.
+        //
         // Every npcflag these need (BANKER, AUCTIONEER, MAILBOX, TRAINER) is set
         // permanently on the creature template, so unlike the Argent Pony - which is
         // a real world NPC swapping roles - there are no flags to replace here.
@@ -269,12 +298,14 @@ public:
                 player->GetSession()->SendShowMailBox(creature->GetGUID());
                 break;
             case ACTION_REPAIR:
+                CloseGossipMenuFor(player);
                 RepairFor(player);
                 break;
             case ACTION_TRAIN:
                 player->GetSession()->SendTrainerList(creature);
                 break;
             default:
+                CloseGossipMenuFor(player);
                 break;
         }
 
