@@ -61,7 +61,7 @@ bot awareness.
 | File | What it does |
 |---|---|
 | `00_madosa_common.lua` | Shared globals: `Madosa.IsRealPlayer` / `IsPlayerbot`, tagged logging. Must load first. |
-| `10_smoketest.lua` | Logs one line at startup proving the engine and this directory are live. Safe to delete. |
+| `10_smoketest.lua` | Logs one line every time the scripts load (so a reload proves it too, not just a boot) plus one when world startup finishes. Safe to delete. |
 | `20_xpboost_login_notice.lua` | Tells a player on login how large their mod-xpboost boost is (the buff icon alone does not say). |
 
 ## Setup
@@ -85,6 +85,33 @@ ALE.TraceBack  = true      # full Lua stack trace on error instead of one line
 
 Turn `AutoReload` off if this realm ever stops being a personal server - it polls the
 filesystem every `ALE.AutoReloadInterval` seconds.
+
+### ⚠ The logger must go in `worldserver.conf`, not `mod_ale.conf`
+
+**Without this, ALE runs but is completely silent** - no startup banner, no
+`ALE.log`, and every `print()` / `PrintInfo()` / `Madosa.Log()` disappears. It looks
+exactly like the engine failing to load, and cost real debugging time once already.
+
+`mod_ale.conf` ships its own `Appender.ALELog` and `Logger.ALE`, but they never take
+effect: `ALE::Initialize()` runs from `OnBeforeConfigLoad`, before the module config
+reaches the log system. With no `ALE` logger registered, the messages fall back to
+`Logger.root`, which this realm sets to level 2 (errors only) - so anything at INFO
+is silently dropped.
+
+Add both to `env/dist/etc/worldserver.conf` instead (that file is **not** version
+controlled, so this is lost on a fresh server setup - which is why it is written
+down here):
+
+```ini
+Appender.ALELog=2,5,0,ALE.log,w
+Logger.ALE=4,Console ALELog
+```
+
+`.reload config` is enough to pick them up; no restart needed.
+
+To tell "silent because of logging" apart from "actually not loading", use something
+that does not go through the logger at all - a top-level `io.open(...)` write in a
+script proves the engine executed the file regardless of logger config.
 
 ## Reloading by hand
 
