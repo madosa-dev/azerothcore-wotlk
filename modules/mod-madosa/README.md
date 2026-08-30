@@ -147,6 +147,28 @@ are substantial enough to stand on their own).
   `ScriptName`, spawned nowhere). See `Madosa.RepairPet.Enable` and
   `Madosa.MailPet.Enable`.
 
+- **`omni_pet.sql`** + the `npc_madosa_omnibot` script in
+  `src/mod_madosa_service_pets.cpp`: "Omnibot", one 10000g companion offering
+  every service the individual ones do - bank, auction house, mail, repair and
+  training - and auto-looting kills like Lootbot (that part lives in
+  `mod_madosa_autoloot_pet.cpp`, which now matches either companion's entry).
+  It exists because of a hard client limit rather than for convenience: WotLK
+  allows exactly **one** summoned companion, so owning eight service pets means
+  constantly swapping them, and each companion added makes that worse. The core
+  has the same idea in the Argent Pony (`scripts/Pet/pet_generic.cpp`).
+  Training was the one service that could not simply be forwarded: both
+  `WorldSession::SendTrainerList()` and the buy handler resolve the trainer from
+  `npc->GetEntry()`, so showing another creature's list would display spells
+  that then fail to purchase. Omnibot therefore has its own trainer (90003),
+  built in SQL as a `SELECT` union of Classtrainer's (90001) and Craftbot's
+  (90002) lists so it cannot drift out of sync. Merging is safe because neither
+  the class/race filtering (`Trainer::GetSpellState` ->
+  `Player::IsSpellFitByClassAndRace`) nor the two-primary-profession limit
+  (`Trainer::CanTeachSpell` -> `GetFreePrimaryProfessionPoints`) depends on the
+  trainer's `Type`. Like trainer 90001 it logs one harmless `invalid class
+  requirement` warning at startup, for the same `Requirement = 0` reason. See
+  `Madosa.OmniPet.Enable`.
+
 ## Live-tunable settings (`MadosaSettings`)
 
 Every knob a GM might want to tweak while the server is running is **not**

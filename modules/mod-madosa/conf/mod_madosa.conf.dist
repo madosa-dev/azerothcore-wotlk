@@ -220,6 +220,20 @@ Madosa.RepairPet.Enable = 1
 #
 Madosa.MailPet.Enable = 1
 
+# Madosa.OmniPet.Enable
+#
+#        Description: Omnibot, a companion pet (10000g, sold by the same Special
+#                     Vendor NPCs) offering every service the individual companions
+#                     do - bank, auction house, mail, repair and training - and
+#                     auto-looting your kills like Lootbot. It exists because WotLK
+#                     allows only ONE summoned companion at a time, so owning eight
+#                     service pets means constantly swapping them.
+#
+#        Default:     1 - Enabled
+#                     0 - Disabled
+#
+Madosa.OmniPet.Enable = 1
+
 # Madosa.Addon.Enable
 #
 #        Description: Lets the MadosaControl client addon read and change the

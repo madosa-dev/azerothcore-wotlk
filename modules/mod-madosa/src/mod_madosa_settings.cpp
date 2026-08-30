@@ -57,6 +57,7 @@ namespace
     std::atomic<bool> passerbyBuffPaladinWisdom{true};
     std::atomic<bool> repairPetEnable{true};
     std::atomic<bool> mailPetEnable{true};
+    std::atomic<bool> omniPetEnable{true};
 
     // Every feature toggle behaves identically, so they share one table instead
     // of repeating the same parse/validate/store block per key. Madosa.Addon.Enable
@@ -88,6 +89,7 @@ namespace
         { "passerbybuff.paladin.wisdom.enable",      "Madosa.PasserbyBuff.Paladin.Wisdom.Enable",      &passerbyBuffPaladinWisdom,      true },
         { "repairpet.enable",         "Madosa.RepairPet.Enable",           &repairPetEnable,         true },
         { "mailpet.enable",           "Madosa.MailPet.Enable",             &mailPetEnable,           true },
+        { "omnipet.enable",           "Madosa.OmniPet.Enable",             &omniPetEnable,           true },
     };
 
     BoolSetting const* FindBoolSetting(std::string const& key)
@@ -230,6 +232,7 @@ namespace MadosaSettings
     bool GetPasserbyBuffPaladinWisdomEnable() { return passerbyBuffPaladinWisdom.load(); }
     bool GetRepairPetEnable() { return repairPetEnable.load(); }
     bool GetMailPetEnable() { return mailPetEnable.load(); }
+    bool GetOmniPetEnable() { return omniPetEnable.load(); }
 
     void Init()
     {

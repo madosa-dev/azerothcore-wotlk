@@ -53,6 +53,15 @@
 namespace
 {
     constexpr uint32 LOOT_RAT_ENTRY = 16549; // "Lootbot" (renamed from "Whiskers the Rat") - confirmed in-game
+    constexpr uint32 OMNIBOT_ENTRY  = 40703; // "Omnibot" (renamed from "Lil' XT") - see service_pets.sql
+
+    // Omnibot exists because only one companion can be summoned at a time, so it
+    // has to cover auto-looting too - otherwise picking it would silently cost the
+    // player Lootbot's whole reason for existing.
+    constexpr bool IsAutoLootCompanion(uint32 entry)
+    {
+        return entry == LOOT_RAT_ENTRY || entry == OMNIBOT_ENTRY;
+    }
 
     // Most recent kill per player that still had loot on it, so summoning
     // Lootbot right after a kill can catch that corpse too. Only the latest
@@ -66,7 +75,7 @@ namespace
             return false;
 
         Creature* critter = ObjectAccessor::GetCreature(*player, critterGuid);
-        return critter && critter->GetEntry() == LOOT_RAT_ENTRY;
+        return critter && IsAutoLootCompanion(critter->GetEntry());
     }
 
     void AutoLoot(Player* player, Creature* target)
@@ -141,7 +150,7 @@ public:
 
     void OnPlayerBeforeTempSummonInitStats(Player* player, TempSummon* tempSummon, uint32& /*duration*/) override
     {
-        if (tempSummon->GetEntry() != LOOT_RAT_ENTRY)
+        if (!IsAutoLootCompanion(tempSummon->GetEntry()))
             return;
 
         if (!MadosaSettings::GetAutoLootPetEnable())

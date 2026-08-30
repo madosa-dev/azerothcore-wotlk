@@ -200,6 +200,12 @@ EXTRA_SPELLS = {
         desc="Right Click to summon and dismiss your Mailbot. While summoned, "
              "it gives you access to your mailbox - anywhere, anytime.",
     ),
+    75906: dict(   # was "Lil' XT", repurposed as Omnibot
+        name="Omnibot",
+        desc="Right Click to summon and dismiss your Omnibot. While summoned, it "
+             "offers your bank, the auction house, your mailbox, repairs and "
+             "training - and loots your kills.",
+    ),
 }
 
 # Wholly new spells: unlike EXTRA_SPELLS/PETS these ids do not exist yet, so a

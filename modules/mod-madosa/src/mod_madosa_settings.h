@@ -62,6 +62,7 @@ namespace MadosaSettings
     bool GetPasserbyBuffPaladinWisdomEnable();
     bool GetRepairPetEnable();
     bool GetMailPetEnable();
+    bool GetOmniPetEnable();
 
     // Parses and applies value for key, persisting it to the DB override
     // table. Returns false (and fills outError) if key is unknown or value

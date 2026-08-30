@@ -97,6 +97,36 @@ namespace
         out += std::to_string(rest) + "c";
         return out;
     }
+
+    // Shared by Repairbot and Omnibot so the two can never drift apart.
+    void RepairFor(Player* player)
+    {
+        ChatHandler handler(player->GetSession());
+
+        if (!HasDamagedItems(player))
+        {
+            handler.PSendSysMessage("Your equipment is already in perfect condition.");
+            return;
+        }
+
+        // discountMod 1.0f = no reputation discount (the pet has no faction to like
+        // you), guildBank false = always the player's own money.
+        uint32 cost = player->DurabilityRepairAll(true, 1.0f, false);
+
+        if (!cost)
+        {
+            handler.PSendSysMessage("You cannot afford the repairs.");
+            return;
+        }
+
+        // DurabilityRepairAll skips (rather than fails on) any single item the player
+        // ran out of money for, so a non-zero cost does not prove everything got fixed.
+        if (HasDamagedItems(player))
+            handler.PSendSysMessage("Repaired what you could afford, for {} - some items are still damaged.",
+                                    FormatMoney(cost));
+        else
+            handler.PSendSysMessage("Equipment fully repaired for {}.", FormatMoney(cost));
+    }
 }
 
 // "Repairbot" - repairs everything the player is carrying, for the normal cost.
@@ -124,31 +154,7 @@ public:
         if (!MadosaSettings::GetRepairPetEnable() || action != GOSSIP_ACTION_INFO_DEF)
             return true;
 
-        if (!HasDamagedItems(player))
-        {
-            ChatHandler(player->GetSession()).PSendSysMessage("Your equipment is already in perfect condition.");
-            return true;
-        }
-
-        // discountMod 1.0f = no reputation discount (the pet has no faction to like
-        // you), guildBank false = always the player's own money.
-        uint32 cost = player->DurabilityRepairAll(true, 1.0f, false);
-
-        if (!cost)
-        {
-            ChatHandler(player->GetSession()).PSendSysMessage("You cannot afford the repairs.");
-            return true;
-        }
-
-        // DurabilityRepairAll skips (rather than fails on) any single item the player
-        // ran out of money for, so a non-zero cost does not prove everything got fixed.
-        if (HasDamagedItems(player))
-            ChatHandler(player->GetSession()).PSendSysMessage(
-                "Repaired what you could afford, for {} - some items are still damaged.",
-                FormatMoney(cost));
-        else
-            ChatHandler(player->GetSession()).PSendSysMessage("Equipment fully repaired for {}.",
-                                                              FormatMoney(cost));
+        RepairFor(player);
         return true;
     }
 };
@@ -187,8 +193,98 @@ public:
     }
 };
 
+// "Omnibot" - every service the individual companions offer, from one pet.
+//
+// The point is a hard client limit rather than convenience: WotLK allows exactly
+// one summoned companion, so owning eight service pets means constantly swapping
+// them. Each companion we add makes that worse, not better. Omnibot is the answer
+// to that, and the Argent Pony (scripts/Pet/pet_generic.cpp) is the same idea in
+// the core - one pet, several services behind a gossip menu.
+//
+// Training is the one service that could not simply be forwarded: both
+// WorldSession::SendTrainerList() and the buy handler resolve the trainer from
+// npc->GetEntry(), so showing another creature's trainer list would display the
+// spells but fail every purchase. Omnibot therefore has its own trainer (90003),
+// built in SQL as the union of the Classtrainer (90001) and Craftbot (90002)
+// lists. That is safe because neither the class/race filtering nor the
+// two-primary-profession limit depends on the trainer's Type: Trainer::
+// GetSpellState() filters per spell via Player::IsSpellFitByClassAndRace(), and
+// Trainer::CanTeachSpell() enforces the profession limit via
+// GetFreePrimaryProfessionPoints(). Requirement = 0 makes the window open for
+// everyone (and produces the same harmless "invalid class requirement" startup
+// warning that trainer 90001 already does).
+class npc_madosa_omnibot : public CreatureScript
+{
+    enum Action : uint32
+    {
+        ACTION_BANK = GOSSIP_ACTION_INFO_DEF + 1,
+        ACTION_AUCTION,
+        ACTION_MAIL,
+        ACTION_REPAIR,
+        ACTION_TRAIN,
+    };
+
+public:
+    npc_madosa_omnibot() : CreatureScript("npc_madosa_omnibot") { }
+
+    bool OnGossipHello(Player* player, Creature* creature) override
+    {
+        if (!MadosaSettings::GetOmniPetEnable())
+            return false;
+
+        ClearGossipMenuFor(player);
+        AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "I would like to check my deposit box.",
+                         GOSSIP_SENDER_MAIN, ACTION_BANK);
+        AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "I would like to browse the auction house.",
+                         GOSSIP_SENDER_MAIN, ACTION_AUCTION);
+        AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "I would like to check my mail.",
+                         GOSSIP_SENDER_MAIN, ACTION_MAIL);
+        AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "Repair all my equipment.",
+                         GOSSIP_SENDER_MAIN, ACTION_REPAIR);
+        AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Train me.",
+                         GOSSIP_SENDER_MAIN, ACTION_TRAIN);
+        SendGossipMenuFor(player, player->GetGossipTextId(creature), creature);
+        return true;
+    }
+
+    bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
+    {
+        CloseGossipMenuFor(player);
+
+        if (!MadosaSettings::GetOmniPetEnable())
+            return true;
+
+        // Every npcflag these need (BANKER, AUCTIONEER, MAILBOX, TRAINER) is set
+        // permanently on the creature template, so unlike the Argent Pony - which is
+        // a real world NPC swapping roles - there are no flags to replace here.
+        switch (action)
+        {
+            case ACTION_BANK:
+                player->GetSession()->SendShowBank(creature->GetGUID());
+                break;
+            case ACTION_AUCTION:
+                player->GetSession()->SendAuctionHello(creature->GetGUID(), creature);
+                break;
+            case ACTION_MAIL:
+                player->GetSession()->SendShowMailBox(creature->GetGUID());
+                break;
+            case ACTION_REPAIR:
+                RepairFor(player);
+                break;
+            case ACTION_TRAIN:
+                player->GetSession()->SendTrainerList(creature);
+                break;
+            default:
+                break;
+        }
+
+        return true;
+    }
+};
+
 void AddSC_madosa_service_pets()
 {
     new npc_madosa_repairbot();
     new npc_madosa_mailbot();
+    new npc_madosa_omnibot();
 }
