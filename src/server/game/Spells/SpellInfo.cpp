@@ -2214,6 +2214,12 @@ SpellSpecificType SpellInfo::LoadSpellSpecific() const
                         return SPELL_SPECIFIC_NORMAL;
                     [[fallthrough]]; /// @todo: Not sure whether the fallthrough was a mistake (forgetting a break) or intended. This should be double-checked.
                 case SPELL_AURA_TRACK_RESOURCES:
+                    /// @workaround Let the profession gathering trackers stack with each other
+                    /// (and with everything else) instead of replacing one another, so e.g. Find
+                    /// Herbs and Find Minerals can both be active on the minimap at once.
+                    if (Id == 2383 || Id == 2580) // Find Herbs, Find Minerals
+                        return SPELL_SPECIFIC_NORMAL;
+                    [[fallthrough]];
                 case SPELL_AURA_TRACK_STEALTHED:
                     return SPELL_SPECIFIC_TRACKER;
                 default:
