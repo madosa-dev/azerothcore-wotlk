@@ -110,6 +110,20 @@ are substantial enough to stand on their own).
   profession slot is per-character by nature), so
   `mod_madosa_account_companions.cpp` never picks it up. See
   `Madosa.ProfessionSlots.Enable`.
+- **`src/mod_madosa_passerby_buff.cpp`**: idle/random playerbots that are NOT
+  in your group give you their signature buff when standing nearby, the way a
+  friendly player might in trade chat - checked every 5 seconds via a periodic
+  scan from each real player's side (using mod-playerbots' `GET_PLAYERBOT_AI`
+  purely to tell a bot from a real player, no other coupling to its internals,
+  so this survives `mod-playerbots` upstream merges untouched). Only Priest
+  (Fortitude/Divine Spirit), Mage (Arcane Intellect), Druid (Mark of the Wild)
+  and Paladin (a Blessing) have anything to offer this way: every other
+  class's group buffs (Battle Shout, Aspects, Auras, totems) only ever affect
+  the caster's own party/raid in WotLK, so a bystander can't receive them. A
+  bot only ever offers the highest rank it currently knows (resolved by spell
+  name against its own spellbook, mirroring how mod-playerbots itself picks a
+  bot's spell rank) and never re-casts a buff already present on the target.
+  See `Madosa.PasserbyBuff.Enable` and friends.
 
 ## Live-tunable settings (`MadosaSettings`)
 
@@ -127,6 +141,15 @@ read straight from the config file:
 | `instancequestpet.enable` | `Madosa.InstanceQuestPet.Enable` | on/off |
 | `professionslots.enable` | `Madosa.ProfessionSlots.Enable` | on/off |
 | `professionslots.max` | `Madosa.ProfessionSlots.Max` | number, 1-20 |
+| `passerbybuff.enable` | `Madosa.PasserbyBuff.Enable` | on/off |
+| `passerbybuff.radius` | `Madosa.PasserbyBuff.Radius` | number, 5-60 |
+| `passerbybuff.priest.fortitude.enable` | `Madosa.PasserbyBuff.Priest.Fortitude.Enable` | on/off |
+| `passerbybuff.priest.spirit.enable` | `Madosa.PasserbyBuff.Priest.Spirit.Enable` | on/off |
+| `passerbybuff.mage.intellect.enable` | `Madosa.PasserbyBuff.Mage.Intellect.Enable` | on/off |
+| `passerbybuff.druid.markofthewild.enable` | `Madosa.PasserbyBuff.Druid.MarkOfTheWild.Enable` | on/off |
+| `passerbybuff.paladin.kings.enable` | `Madosa.PasserbyBuff.Paladin.Kings.Enable` | on/off |
+| `passerbybuff.paladin.wisdom.enable` | `Madosa.PasserbyBuff.Paladin.Wisdom.Enable` | on/off |
+| `passerbybuff.paladin.might.enable` | `Madosa.PasserbyBuff.Paladin.Might.Enable` | on/off |
 
 `Madosa.Addon.Enable` is deliberately absent: it gates the bridge MadosaControl
 talks through, so exposing it there would let the panel lock itself out. Change

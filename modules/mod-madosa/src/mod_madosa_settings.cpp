@@ -46,6 +46,15 @@ namespace
     std::atomic<bool> instanceQuestPetEnable{true};
     std::atomic<bool> professionSlotsEnable{true};
     std::atomic<uint32> professionSlotsMax{5};
+    std::atomic<bool> passerbyBuffEnable{true};
+    std::atomic<float> passerbyBuffRadius{20.0f};
+    std::atomic<bool> passerbyBuffPriestFortitude{true};
+    std::atomic<bool> passerbyBuffPriestSpirit{true};
+    std::atomic<bool> passerbyBuffMageIntellect{true};
+    std::atomic<bool> passerbyBuffDruidMarkOfTheWild{true};
+    std::atomic<bool> passerbyBuffPaladinKings{true};
+    std::atomic<bool> passerbyBuffPaladinMight{true};
+    std::atomic<bool> passerbyBuffPaladinWisdom{true};
 
     // Every feature toggle behaves identically, so they share one table instead
     // of repeating the same parse/validate/store block per key. Madosa.Addon.Enable
@@ -67,6 +76,14 @@ namespace
         { "accountcompanions.enable", "Madosa.AccountCompanions.Enable",   &accountCompanionsEnable, true },
         { "instancequestpet.enable",  "Madosa.InstanceQuestPet.Enable",    &instanceQuestPetEnable,  true },
         { "professionslots.enable",   "Madosa.ProfessionSlots.Enable",     &professionSlotsEnable,   true },
+        { "passerbybuff.enable",                     "Madosa.PasserbyBuff.Enable",                     &passerbyBuffEnable,             true },
+        { "passerbybuff.priest.fortitude.enable",    "Madosa.PasserbyBuff.Priest.Fortitude.Enable",    &passerbyBuffPriestFortitude,    true },
+        { "passerbybuff.priest.spirit.enable",       "Madosa.PasserbyBuff.Priest.Spirit.Enable",       &passerbyBuffPriestSpirit,       true },
+        { "passerbybuff.mage.intellect.enable",      "Madosa.PasserbyBuff.Mage.Intellect.Enable",      &passerbyBuffMageIntellect,      true },
+        { "passerbybuff.druid.markofthewild.enable", "Madosa.PasserbyBuff.Druid.MarkOfTheWild.Enable", &passerbyBuffDruidMarkOfTheWild, true },
+        { "passerbybuff.paladin.kings.enable",       "Madosa.PasserbyBuff.Paladin.Kings.Enable",       &passerbyBuffPaladinKings,       true },
+        { "passerbybuff.paladin.might.enable",       "Madosa.PasserbyBuff.Paladin.Might.Enable",       &passerbyBuffPaladinMight,       true },
+        { "passerbybuff.paladin.wisdom.enable",      "Madosa.PasserbyBuff.Paladin.Wisdom.Enable",      &passerbyBuffPaladinWisdom,      true },
     };
 
     BoolSetting const* FindBoolSetting(std::string const& key)
@@ -153,6 +170,7 @@ namespace
         professionXPPercent = sConfigMgr->GetOption<float>("Madosa.ProfessionXP.PercentOfLevelXP", 1.0f);
         professionXPSkillMultiplier = sConfigMgr->GetOption<uint32>("Madosa.ProfessionXP.SkillGainMultiplier", 2);
         professionSlotsMax = sConfigMgr->GetOption<uint32>("Madosa.ProfessionSlots.Max", 5);
+        passerbyBuffRadius = sConfigMgr->GetOption<float>("Madosa.PasserbyBuff.Radius", 20.0f);
     }
 
     void LoadOverridesFromDB()
@@ -178,6 +196,8 @@ namespace
                 professionXPSkillMultiplier = u;
             else if (key == "professionslots.max" && ParseUInt(value, u))
                 professionSlotsMax = u;
+            else if (key == "passerbybuff.radius" && ParseFloat(value, f))
+                passerbyBuffRadius = f;
             else
                 LOG_ERROR("module", "mod-madosa: ignoring stored setting {}={} (unknown key or invalid value)", key, value);
         } while (result->NextRow());
@@ -195,6 +215,15 @@ namespace MadosaSettings
     bool GetInstanceQuestPetEnable() { return instanceQuestPetEnable.load(); }
     bool GetProfessionSlotsEnable() { return professionSlotsEnable.load(); }
     uint32 GetProfessionSlotsMax() { return std::max<uint32>(1, professionSlotsMax.load()); }
+    bool GetPasserbyBuffEnable() { return passerbyBuffEnable.load(); }
+    float GetPasserbyBuffRadius() { return passerbyBuffRadius.load(); }
+    bool GetPasserbyBuffPriestFortitudeEnable() { return passerbyBuffPriestFortitude.load(); }
+    bool GetPasserbyBuffPriestSpiritEnable() { return passerbyBuffPriestSpirit.load(); }
+    bool GetPasserbyBuffMageIntellectEnable() { return passerbyBuffMageIntellect.load(); }
+    bool GetPasserbyBuffDruidMarkOfTheWildEnable() { return passerbyBuffDruidMarkOfTheWild.load(); }
+    bool GetPasserbyBuffPaladinKingsEnable() { return passerbyBuffPaladinKings.load(); }
+    bool GetPasserbyBuffPaladinMightEnable() { return passerbyBuffPaladinMight.load(); }
+    bool GetPasserbyBuffPaladinWisdomEnable() { return passerbyBuffPaladinWisdom.load(); }
 
     void Init()
     {
@@ -246,6 +275,18 @@ namespace MadosaSettings
             }
             professionSlotsMax = u;
         }
+        else if (key == "passerbybuff.radius")
+        {
+            float f;
+            // Below ~5yd bots would need to stand on top of the player to trigger; above 60yd
+            // exceeds the cast range of every candidate buff, so the setting would do nothing.
+            if (!ParseFloat(value, f) || f < 5.0f || f > 60.0f)
+            {
+                outError = "value must be a number between 5 and 60";
+                return false;
+            }
+            passerbyBuffRadius = f;
+        }
         else
         {
             outError = "unknown setting key";
@@ -259,7 +300,8 @@ namespace MadosaSettings
     bool Reset(std::string const& key, std::string& outError)
     {
         if (!FindBoolSetting(key) && key != "professionxp.percent" &&
-            key != "professionxp.skillmultiplier" && key != "professionslots.max")
+            key != "professionxp.skillmultiplier" && key != "professionslots.max" &&
+            key != "passerbybuff.radius")
         {
             outError = "unknown setting key";
             return false;
@@ -280,6 +322,7 @@ namespace MadosaSettings
         out.push_back({ "professionxp.percent", FloatToStr(GetProfessionXPPercent()) });
         out.push_back({ "professionxp.skillmultiplier", std::to_string(GetProfessionXPSkillMultiplier()) });
         out.push_back({ "professionslots.max", std::to_string(GetProfessionSlotsMax()) });
+        out.push_back({ "passerbybuff.radius", FloatToStr(GetPasserbyBuffRadius()) });
         for (BoolSetting const& setting : boolSettings)
             if (std::string(setting.key) != "professionxp.enable")
                 out.push_back({ setting.key, BoolToStr(setting.slot->load()) });

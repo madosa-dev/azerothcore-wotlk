@@ -25,6 +25,7 @@
 #     Madosa.ProfessionXP.PercentOfLevelXP    -> professionxp.percent
 #     Madosa.ProfessionXP.SkillGainMultiplier -> professionxp.skillmultiplier
 #     Madosa.ProfessionSlots.Max              -> professionslots.max
+#     Madosa.PasserbyBuff.Radius              -> passerbybuff.radius
 #
 # ".madosa status" always prints the authoritative list. Keep the ".enable"
 # suffix for new on/off toggles - MadosaControl renders a checkbox for those
@@ -142,6 +143,60 @@ Madosa.ProfessionSlots.Enable = 1
 #        Default:     5
 #
 Madosa.ProfessionSlots.Max = 5
+
+# Madosa.PasserbyBuff.Enable
+#
+#        Description: Idle/random playerbots that are NOT in your group give you their
+#                     signature buff when they're standing nearby, the way a friendly
+#                     player might in trade chat. Only Priest (Fortitude/Divine Spirit),
+#                     Mage (Arcane Intellect), Druid (Mark of the Wild) and Paladin
+#                     (a Blessing) have anything to offer this way - every other class's
+#                     buffs (Battle Shout, Aspects, Auras, totems) only ever affect the
+#                     caster's own party/raid in WotLK, so bystanders can't receive them.
+#                     A bot only offers the highest rank it actually knows for its level,
+#                     never re-casts a buff you already have, and always waits for a
+#                     grouped bot's own party-buff behavior instead of interfering with it.
+#
+#        Default:     1 - Enabled
+#                     0 - Disabled
+#
+Madosa.PasserbyBuff.Enable = 1
+
+# Madosa.PasserbyBuff.Radius
+#
+#        Description: How close (in yards) an eligible bot must be standing to buff you.
+#                     Checked every 5 seconds, so this doesn't need to be large - a bot
+#                     that walked past and out of range simply gets picked up again next
+#                     time it (or another one) comes close enough.
+#
+#        Default:     20
+#
+Madosa.PasserbyBuff.Radius = 20
+
+# Madosa.PasserbyBuff.Priest.Fortitude.Enable
+# Madosa.PasserbyBuff.Priest.Spirit.Enable
+# Madosa.PasserbyBuff.Mage.Intellect.Enable
+# Madosa.PasserbyBuff.Druid.MarkOfTheWild.Enable
+# Madosa.PasserbyBuff.Paladin.Kings.Enable
+# Madosa.PasserbyBuff.Paladin.Wisdom.Enable
+# Madosa.PasserbyBuff.Paladin.Might.Enable
+#
+#        Description: Per-buff toggles, so a passerby buff can be turned off individually
+#                     (e.g. only Fortitude, not Divine Spirit). Paladin blessings share one
+#                     aura slot on the target, so only the highest-priority enabled blessing
+#                     (Kings, then Wisdom, then Might) is ever offered by a given bot - the
+#                     other two stay disabled toggles rather than fighting over the slot.
+#
+#        Default:     1 - Enabled (all seven)
+#                     0 - Disabled
+#
+Madosa.PasserbyBuff.Priest.Fortitude.Enable = 1
+Madosa.PasserbyBuff.Priest.Spirit.Enable = 1
+Madosa.PasserbyBuff.Mage.Intellect.Enable = 1
+Madosa.PasserbyBuff.Druid.MarkOfTheWild.Enable = 1
+Madosa.PasserbyBuff.Paladin.Kings.Enable = 1
+Madosa.PasserbyBuff.Paladin.Wisdom.Enable = 1
+Madosa.PasserbyBuff.Paladin.Might.Enable = 1
 
 # Madosa.Addon.Enable
 #

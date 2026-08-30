@@ -32,6 +32,7 @@ void AddSC_madosa_autoloot_pet();
 void AddSC_madosa_account_companions();
 void AddSC_madosa_instance_quest_pet();
 void AddSC_madosa_profession_slots();
+void AddSC_madosa_passerby_buff();
 
 // Add all
 void Addmod_madosaScripts()
@@ -46,4 +47,5 @@ void Addmod_madosaScripts()
     AddSC_madosa_account_companions();
     AddSC_madosa_instance_quest_pet();
     AddSC_madosa_profession_slots();
+    AddSC_madosa_passerby_buff();
 }

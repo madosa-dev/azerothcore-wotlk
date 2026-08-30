@@ -70,6 +70,15 @@ local LABELS = {
     ["professiontools.enable"]      = "Craftbot: grant profession tools",
     ["accountcompanions.enable"]    = "Companions shared across the account",
     ["instancequestpet.enable"]     = "Questbot: hand out instance quests",
+    ["passerbybuff.enable"]                     = "Passerby buffs: bots buff nearby non-group players",
+    ["passerbybuff.radius"]                     = "Passerby buffs: detection radius (yards)",
+    ["passerbybuff.priest.fortitude.enable"]    = "Passerby buff: Priest - Power Word: Fortitude",
+    ["passerbybuff.priest.spirit.enable"]       = "Passerby buff: Priest - Divine Spirit",
+    ["passerbybuff.mage.intellect.enable"]      = "Passerby buff: Mage - Arcane Intellect",
+    ["passerbybuff.druid.markofthewild.enable"] = "Passerby buff: Druid - Mark of the Wild",
+    ["passerbybuff.paladin.kings.enable"]       = "Passerby buff: Paladin - Blessing of Kings",
+    ["passerbybuff.paladin.wisdom.enable"]      = "Passerby buff: Paladin - Blessing of Wisdom",
+    ["passerbybuff.paladin.might.enable"]       = "Passerby buff: Paladin - Blessing of Might",
 }
 
 -- Control type. Deriving this from the *value* would misread a numeric setting

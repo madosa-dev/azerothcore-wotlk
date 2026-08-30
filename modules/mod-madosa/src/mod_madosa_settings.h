@@ -51,6 +51,15 @@ namespace MadosaSettings
     bool GetInstanceQuestPetEnable();
     bool GetProfessionSlotsEnable();
     uint32 GetProfessionSlotsMax();
+    bool GetPasserbyBuffEnable();
+    float GetPasserbyBuffRadius();
+    bool GetPasserbyBuffPriestFortitudeEnable();
+    bool GetPasserbyBuffPriestSpiritEnable();
+    bool GetPasserbyBuffMageIntellectEnable();
+    bool GetPasserbyBuffDruidMarkOfTheWildEnable();
+    bool GetPasserbyBuffPaladinKingsEnable();
+    bool GetPasserbyBuffPaladinMightEnable();
+    bool GetPasserbyBuffPaladinWisdomEnable();
 
     // Parses and applies value for key, persisting it to the DB override
     // table. Returns false (and fills outError) if key is unknown or value
