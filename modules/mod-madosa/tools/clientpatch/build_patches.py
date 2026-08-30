@@ -236,6 +236,22 @@ F_SCHOOL_MASK = 225
 SPELL_EFFECT_APPLY_AURA, TARGET_UNIT_CASTER, SPELL_AURA_DUMMY = 6, 1, 4
 CASTTIME_INSTANT, RANGE_SELF, DURATION_INFINITE = 1, 1, 21
 
+# EquippedItemClass. -1 means "no equipped item required"; 0 is NOT a neutral
+# default, it means ITEM_CLASS_CONSUMABLE. Leaving it at 0 made every cast fail
+# with SPELL_FAILED_EQUIPPED_ITEM_CLASS - silently, because a triggered cast
+# reports nothing - since Player::HasItemFitToSpellRequirements() demands an
+# equipped item of that class and consumables can never be equipped
+# (Spell.cpp CheckItems -> Player.cpp:12786, Item.cpp:889). The aura itself was
+# fine all along: applying it directly worked, only casting it did not.
+F_EQUIPPED_ITEM_CLASS = 68
+NO_EQUIPPED_ITEM_REQUIRED = 0xFFFFFFFF  # -1 as uint32
+
+# The per-string locale mask that follows each 16-slot string block. Patched rows
+# inherit a sane value from the spell they overwrite, but a row built from
+# scratch would leave these at 0, which real spells never do.
+F_NAME_FLAGS, F_DESC_FLAGS = 152, 186
+STRING_LOCALE_MASK = 16712190  # what every stock 3.3.5a spell carries
+
 # Template rows copied for anything we do not set ourselves, so sound, blood and
 # the other fields stay plausible. 111 = Chicken model, 7920 = Mechanical Chicken.
 TPL_MODELDATA, TPL_DISPLAYINFO = 111, 7920
@@ -409,6 +425,9 @@ def build_spell_dbcs(spell_blob, spell_from, icon_src, icon_from, quiet=False):
         row[F_SPELL_NAME] = addstr(c["name"])
         row[F_SPELL_DESC] = addstr(c["desc"])
         row[F_SCHOOL_MASK] = 1  # physical; unused by a dummy aura, kept non-zero
+        row[F_EQUIPPED_ITEM_CLASS] = NO_EQUIPPED_ITEM_REQUIRED
+        row[F_NAME_FLAGS] = STRING_LOCALE_MASK
+        row[F_DESC_FLAGS] = STRING_LOCALE_MASK
         new_rows += struct.pack("<%dI" % fc, *row)
         if not quiet:
             print(f"  {label:14} spell {c['spell_id']} created (icon {c['spellicon_id']})")
