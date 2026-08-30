@@ -40,9 +40,11 @@ using namespace Acore::ChatCommands;
 namespace
 {
     // Purely cosmetic buff icon shown while a boost is active - it has no bearing
-    // on the actual XP math. Use ".lookup spell <name>" in-game to find a spell
-    // whose icon/tooltip you like, then set its id here. 0 = no icon, boost still works.
-    constexpr uint32 XP_BOOST_VISUAL_SPELL_ID = 0;
+    // on the actual XP math. Spell 900001 ("XP Boost") is a custom, permanent,
+    // self-only dummy aura built by modules/mod-madosa/tools/clientpatch/
+    // build_patches.py (NEW_SPELLS), carrying Ascension's "xpbonus_icon". 0 = no
+    // icon, boost still works.
+    constexpr uint32 XP_BOOST_VISUAL_SPELL_ID = 900001;
 
     constexpr uint16 XP_BOOST_MAX_PCT = 2000;
 
