@@ -10,9 +10,15 @@
 
 local WORLD_EVENT_ON_STARTUP = 14
 
+-- Logged at load time, so a ".reload ALE" (or an AutoReload triggered by saving a
+-- file) proves the engine too - not only a full server start. The startup hook
+-- below fires exactly once per boot and never again, which made it useless for
+-- confirming a reload actually took.
+Madosa.Log("scripts loaded - core=%s, bot account prefix=%q",
+    tostring(GetCoreName()), Madosa.BOT_ACCOUNT_PREFIX)
+
 local function OnStartup(event)
-    Madosa.Log("ALE is live - core=%s, bot account prefix=%q",
-        tostring(GetCoreName()), Madosa.BOT_ACCOUNT_PREFIX)
+    Madosa.Log("ALE is live (world startup complete)")
 end
 
 RegisterServerEvent(WORLD_EVENT_ON_STARTUP, OnStartup)

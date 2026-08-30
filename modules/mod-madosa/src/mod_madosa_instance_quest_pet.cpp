@@ -63,6 +63,7 @@
 #include "PlayerScript.h"
 #include "QuestDef.h"
 #include "ScriptMgr.h"
+#include "ScriptedGossip.h"
 #include "WorldDatabase.h"
 #include "mod_madosa_settings.h"
 
@@ -74,6 +75,11 @@
 
 namespace
 {
+    // npc_text/gossip_menu row from instance_quest_pet.sql, sent by hand when
+    // there is nothing to offer - see OnGossipHello for why it is not wired
+    // through creature_template.gossip_menu_id.
+    constexpr uint32 QUESTBOT_FALLBACK_TEXT_ID = 900350;
+
     constexpr uint32 QUESTBOT_ENTRY = 24388; // "Questbot" (renamed from "Toothy")
 
     std::unordered_map<uint32, std::vector<uint32>> instanceQuestsByMap;
@@ -324,6 +330,26 @@ public:
                         break;
                 }
             }
+        }
+
+        // Two deliberate paths, both of which Player::SendPreparedGossip() would
+        // pick correctly on its own IF the creature carried a gossip_menu_id:
+        // with no UNIT_NPC_FLAG_GOSSIP and a non-empty quest menu it jumps
+        // straight to the quest list (what we want - no pointless "hello" window
+        // in front of the quests), and with an empty one it falls through to the
+        // gossip window and shows the creature's menu text.
+        //
+        // Carrying that menu id on the creature is what made ObjectMgr log
+        // "has assigned gossip menu 900350, but npcflag does not include
+        // UNIT_NPC_FLAG_GOSSIP" on every startup: the core's data validation has
+        // no way to know a script drives both paths. Sending the fallback text
+        // explicitly here keeps both behaviors and lets creature_template drop
+        // the gossip_menu_id, so the warning goes away for the right reason
+        // rather than by adding a flag that would break the quest-list jump.
+        if (questMenu.Empty())
+        {
+            SendGossipMenuFor(player, QUESTBOT_FALLBACK_TEXT_ID, creature);
+            return true;
         }
 
         player->SendPreparedGossip(creature);

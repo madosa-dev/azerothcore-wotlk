@@ -36,9 +36,16 @@
 --    it summons, both renamed to "Questbot". npcflag 2 = QUESTGIVER only (no
 --    GOSSIP) - matches how a pure questgiver-with-no-flavor-text NPC is set
 --    up, so the client goes straight to the quest list instead of a generic
---    gossip window.
+--    gossip window (Player::SendPreparedGossip takes that shortcut precisely
+--    when the GOSSIP flag is absent and the quest menu is non-empty).
+--
+--    gossip_menu_id is deliberately NOT set: pairing one with a creature that
+--    lacks UNIT_NPC_FLAG_GOSSIP makes ObjectMgr log a validation warning on
+--    every startup, and the core cannot tell that a script drives both paths.
+--    The 900350 fallback text below is sent explicitly from OnGossipHello
+--    instead, which keeps both behaviors and drops the warning.
 UPDATE `item_template` SET `name` = 'Questbot', `Description` = 'While summoned, this companion offers every quest for the instance you are in, and takes back finished instance quests from anywhere.', `BuyPrice` = 20000000, `Quality` = 6 WHERE `entry` = 33816;
-UPDATE `creature_template` SET `name` = 'Questbot', `npcflag` = 2, `gossip_menu_id` = 900350, `ScriptName` = 'npc_madosa_questbot' WHERE `entry` = 24388;
+UPDATE `creature_template` SET `name` = 'Questbot', `npcflag` = 2, `gossip_menu_id` = 0, `ScriptName` = 'npc_madosa_questbot' WHERE `entry` = 24388;
 
 -- 2) Fallback text for when there's nothing to offer right now (not inside
 --    an instance, and not carrying any instance quest to turn in) - no
