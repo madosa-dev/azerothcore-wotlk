@@ -192,9 +192,33 @@ EXTRA_SPELLS = {
     ),
 }
 
+# Wholly new spells: unlike EXTRA_SPELLS/PETS these ids do not exist yet, so a
+# fresh row is appended to Spell.dbc (both the client and the server copy - the
+# server must recognise the id too, or CastSpell(id) just fails there). Each is
+# a purely visual, permanent, self-only dummy aura: CastingTimeIndex 1 (instant),
+# RangeIndex 1 ("Self Only"), DurationIndex 21 (Duration[0] = -1, i.e. until
+# removed) - all verified against this client's own SpellCastTimes/SpellRange/
+# SpellDuration.dbc. Ids start at 900001, comfortably above the ~80864 real max.
+NEW_SPELLS = {
+    "XP Boost": dict(
+        spell_id=900001, spellicon_id=4501,
+        icon="xpbonus_icon", icon_archive="patch-I.MPQ",
+        name="XP Boost",
+        desc="You are receiving bonus experience.",
+    ),
+}
+
 # Spell.dbc field indices (3.3.5a, 234 fields). Verified against known spells:
 # 133 gives Fireball -> Spell_Fire_FlameBolt, 136 gives its English name.
 F_SPELL_ICON, F_SPELL_NAME, F_SPELL_DESC = 133, 136, 170
+
+# Field indices used to compose a brand new NEW_SPELLS row from scratch (see
+# src/server/shared/DataStores/DBCStructure.h struct SpellEntry for the layout).
+F_CASTTIME, F_DURATION, F_RANGE = 28, 40, 46
+F_EFFECT1, F_TARGET_A1, F_AURA1 = 71, 86, 95
+F_SCHOOL_MASK = 225
+SPELL_EFFECT_APPLY_AURA, TARGET_UNIT_CASTER, SPELL_AURA_DUMMY = 6, 1, 4
+CASTTIME_INSTANT, RANGE_SELF, DURATION_INFINITE = 1, 1, 21
 
 # Template rows copied for anything we do not set ourselves, so sound, blood and
 # the other fields stay plausible. 111 = Chicken model, 7920 = Mechanical Chicken.
@@ -238,6 +262,15 @@ def collect_files():
             raise SystemExit(f"{pet}: icon {ip} not found in {ia}")
         files.append((ip, blob))
         print(f"  {pet:14} {len(got):>3} model files + icon {c['icon']}")
+    for label, c in NEW_SPELLS.items():
+        ia = c["icon_archive"]
+        handles.setdefault(ia, MPQ(os.path.join(ASCENSION, ia)))
+        ip = "Interface\\Icons\\%s.blp" % c["icon"]
+        blob = handles[ia].read_file(ip)
+        if blob is None:
+            raise SystemExit(f"{label}: icon {ip} not found in {ia}")
+        files.append((ip, blob))
+        print(f"  {label:14}       icon {c['icon']}")
     return files
 
 
@@ -279,22 +312,34 @@ def build_item_dbc(base):
     return idi
 
 
-def build_spell_dbcs():
-    """Patch icon, name and description of the six summon spells in place.
+def build_spell_dbcs(spell_blob, spell_from, icon_src, icon_from, quiet=False):
+    """Patch icon/name/description of the six summon spells in place, then
+    append the NEW_SPELLS rows (ids that do not exist in `spell_blob` yet).
 
     Spell.dbc is ~49 MB; parsing it into Python rows costs hundreds of megabytes
-    of memory, so records are patched at byte level and new strings are appended
-    to the string block.
-    """
-    spell_blob, spell_from = client_dbc("Spell.dbc")
-    icon_src, icon_from = client_dbc("SpellIcon.dbc")
-    print(f"  base Spell.dbc from {spell_from}, SpellIcon.dbc from {icon_from}")
-    spell = bytearray(spell_blob)
-    open(os.path.join(OUT, "_SpellIcon.src"), "wb").write(icon_src)
+    of memory, so existing records are patched at byte level. New rows (for
+    NEW_SPELLS) are built field-by-field instead, since there is no existing
+    row to patch.
 
-    ib = DBCBuilder(os.path.join(OUT, "_SpellIcon.src"))
+    Called once for the client's own Spell.dbc/SpellIcon.dbc and once for the
+    server's, so a brand new spell id is recognised on both sides - the server
+    must know the id too, or CastSpell(id) just fails there even though the
+    client-side icon/tooltip would be fine.
+    """
+    if not quiet:
+        print(f"  base Spell.dbc from {spell_from}, SpellIcon.dbc from {icon_from}")
+    spell = bytearray(spell_blob)
+    tmp_icon_src = os.path.join(OUT, "_SpellIcon.src.%s" % os.getpid())
+    open(tmp_icon_src, "wb").write(icon_src)
+
+    ib = DBCBuilder(tmp_icon_src)
     tpl = list(ib.src.row(0))
     for pet, c in PETS.items():
+        r = list(tpl)
+        r[0] = c["spellicon_id"]
+        r[1] = ib.addstr("Interface\\Icons\\" + c["icon"])
+        ib.append(r)
+    for label, c in NEW_SPELLS.items():
         r = list(tpl)
         r[0] = c["spellicon_id"]
         r[1] = ib.addstr("Interface\\Icons\\" + c["icon"])
@@ -320,21 +365,42 @@ def build_spell_dbcs():
             struct.pack_into("<I", spell, off + F_SPELL_NAME * 4, addstr(c["spell_name"]))
             struct.pack_into("<I", spell, off + F_SPELL_DESC * 4, addstr(c["spell_desc"]))
             done += 1
-            print(f"  {pet:14} spell {sid} icon/name/description patched")
+            if not quiet:
+                print(f"  {pet:14} spell {sid} icon/name/description patched")
         elif sid in EXTRA_SPELLS:
             e = EXTRA_SPELLS[sid]
             struct.pack_into("<I", spell, off + F_SPELL_NAME * 4, addstr(e["name"]))
             struct.pack_into("<I", spell, off + F_SPELL_DESC * 4, addstr(e["desc"]))
             extra_done += 1
-            print(f"  {e['name']:14} spell {sid} name/description patched")
+            if not quiet:
+                print(f"  {e['name']:14} spell {sid} name/description patched")
     if done != len(PETS):
         raise SystemExit(f"only {done}/{len(PETS)} pet spells found in Spell.dbc")
     if extra_done != len(EXTRA_SPELLS):
         raise SystemExit(f"only {extra_done}/{len(EXTRA_SPELLS)} extra spells found")
 
-    head = struct.pack("<4sIIII", b"WDBC", rc, fc, rs, len(strings))
-    out = head + bytes(spell[20:20 + rc * rs]) + bytes(strings)
-    os.remove(os.path.join(OUT, "_SpellIcon.src"))
+    new_rows = bytearray()
+    for label, c in NEW_SPELLS.items():
+        row = [0] * fc
+        row[0] = c["spell_id"]
+        row[F_CASTTIME] = CASTTIME_INSTANT
+        row[F_DURATION] = DURATION_INFINITE
+        row[F_RANGE] = RANGE_SELF
+        row[F_EFFECT1] = SPELL_EFFECT_APPLY_AURA
+        row[F_TARGET_A1] = TARGET_UNIT_CASTER
+        row[F_AURA1] = SPELL_AURA_DUMMY
+        row[F_SPELL_ICON] = c["spellicon_id"]
+        row[F_SPELL_NAME] = addstr(c["name"])
+        row[F_SPELL_DESC] = addstr(c["desc"])
+        row[F_SCHOOL_MASK] = 1  # physical; unused by a dummy aura, kept non-zero
+        new_rows += struct.pack("<%dI" % fc, *row)
+        if not quiet:
+            print(f"  {label:14} spell {c['spell_id']} created (icon {c['spellicon_id']})")
+    total_rc = rc + len(NEW_SPELLS)
+
+    head = struct.pack("<4sIIII", b"WDBC", total_rc, fc, rs, len(strings))
+    out = head + bytes(spell[20:20 + rc * rs]) + bytes(new_rows) + bytes(strings)
+    os.remove(tmp_icon_src)
     return out, ib
 
 
@@ -400,17 +466,26 @@ def main():
                                        vanilla("CreatureDisplayInfo.dbc"), quiet=True)
     s_idi = build_item_dbc(vanilla("ItemDisplayInfo.dbc"))
 
-    print("Patching spells:")
-    spell_blob, ib = build_spell_dbcs()
+    print("Patching spells (client, on top of the client's own Spell.dbc):")
+    c_spell_blob, c_spell_from = client_dbc("Spell.dbc")
+    c_icon_blob, c_icon_from = client_dbc("SpellIcon.dbc")
+    spell_blob, ib = build_spell_dbcs(c_spell_blob, c_spell_from, c_icon_blob, c_icon_from)
+
+    print("Patching spells (server, on top of the server's own Spell.dbc):")
+    s_spell_blob = open(vanilla("Spell.dbc"), "rb").read()
+    s_icon_blob = open(vanilla("SpellIcon.dbc"), "rb").read()
+    s_spell_out, s_ib = build_spell_dbcs(s_spell_blob, "server", s_icon_blob, "server", quiet=True)
 
     p_cmd = os.path.join(OUT, "client_CreatureModelData.dbc")
     p_cdi = os.path.join(OUT, "client_CreatureDisplayInfo.dbc")
     p_idi = os.path.join(OUT, "client_ItemDisplayInfo.dbc")
-    p_ico = os.path.join(OUT, "SpellIcon.dbc")
+    p_ico = os.path.join(OUT, "client_SpellIcon.dbc")
     cmd.save(p_cmd); cdi.save(p_cdi); idi.save(p_idi); ib.save(p_ico)
     s_cmd.save(os.path.join(OUT, "CreatureModelData.dbc"))
     s_cdi.save(os.path.join(OUT, "CreatureDisplayInfo.dbc"))
     s_idi.save(os.path.join(OUT, "ItemDisplayInfo.dbc"))
+    s_ib.save(os.path.join(OUT, "SpellIcon.dbc"))
+    open(os.path.join(OUT, "Spell.dbc"), "wb").write(s_spell_out)
     for name in ("CreatureModelData.dbc", "CreatureDisplayInfo.dbc", "ItemDisplayInfo.dbc"):
         stale = os.path.join(OUT, "_base_" + name)
         if os.path.exists(stale):
@@ -442,7 +517,8 @@ def main():
         shutil.copy(os.path.join(OUT, "patch-v.mpq"), os.path.join(CLIENT, "data/patch-v.mpq"))
         shutil.copy(os.path.join(OUT, "patch-enus-y.mpq"),
                     os.path.join(CLIENT, "data/enus/patch-enus-y.mpq"))
-        for n in ("CreatureModelData.dbc", "CreatureDisplayInfo.dbc", "ItemDisplayInfo.dbc"):
+        for n in ("CreatureModelData.dbc", "CreatureDisplayInfo.dbc", "ItemDisplayInfo.dbc",
+                  "SpellIcon.dbc", "Spell.dbc"):
             bak = os.path.join(SERVER_DBC, n + ".bak-vanilla")
             if not os.path.exists(bak):
                 shutil.copy(os.path.join(SERVER_DBC, n), bak)
