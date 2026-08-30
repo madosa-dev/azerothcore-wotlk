@@ -131,6 +131,22 @@ are substantial enough to stand on their own).
   bot's spell rank) and never re-casts a buff already present on the target.
   See `Madosa.PasserbyBuff.Enable` and friends.
 
+- **`service_pets.sql`** + `src/mod_madosa_service_pets.cpp`: "Repairbot" and
+  "Mailbot", two more 2000g companions from the same Special Vendors.
+  Repairbot repairs everything you carry (normal durability cost still
+  applies - it removes the walk to town, not the gold sink); Mailbot opens
+  your mailbox anywhere. Unlike Bankbot/Auctionbot neither could be pure
+  data: there is no `GOSSIP_OPTION_MAILBOX` at all, and
+  `GOSSIP_OPTION_ARMORER` is never rendered as a menu entry
+  (`PlayerGossip.cpp` sets `canTalk = false` for it) because repairing
+  normally goes through the *merchant* frame - which would mean giving the
+  pet a vendor inventory it has no business having, and an empty one makes
+  `SendListInventory` answer "Vendor has no inventory" instead of opening.
+  Both repurpose a genuinely unobtainable companion (picked by elimination:
+  no vendor, no loot table, no quest reward, not craftable, no existing
+  `ScriptName`, spawned nowhere). See `Madosa.RepairPet.Enable` and
+  `Madosa.MailPet.Enable`.
+
 ## Live-tunable settings (`MadosaSettings`)
 
 Every knob a GM might want to tweak while the server is running is **not**

@@ -190,6 +190,16 @@ EXTRA_SPELLS = {
         desc="Grants one additional primary profession slot, letting you learn "
              "beyond the usual two. The scroll is consumed.",
     ),
+    62514: dict(   # was "Alarming Clockbot", repurposed as Repairbot
+        name="Repairbot",
+        desc="Right Click to summon and dismiss your Repairbot. While summoned, "
+             "it repairs your equipment anywhere, for the usual cost.",
+    ),
+    30156: dict(   # was "Hippogryph Hatchling", repurposed as Mailbot
+        name="Mailbot",
+        desc="Right Click to summon and dismiss your Mailbot. While summoned, "
+             "it gives you access to your mailbox - anywhere, anytime.",
+    ),
 }
 
 # Wholly new spells: unlike EXTRA_SPELLS/PETS these ids do not exist yet, so a

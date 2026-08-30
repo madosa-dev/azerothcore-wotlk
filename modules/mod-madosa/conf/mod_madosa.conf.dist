@@ -198,6 +198,28 @@ Madosa.PasserbyBuff.Paladin.Kings.Enable = 1
 Madosa.PasserbyBuff.Paladin.Wisdom.Enable = 1
 Madosa.PasserbyBuff.Paladin.Might.Enable = 1
 
+# Madosa.RepairPet.Enable
+#
+#        Description: Repairbot, a companion pet (2000g, sold by the same Special
+#                     Vendor NPCs as the other companions) that repairs everything
+#                     you carry from anywhere. Normal repair costs still apply, so
+#                     this removes the walk back to town, not the gold sink.
+#
+#        Default:     1 - Enabled
+#                     0 - Disabled
+#
+Madosa.RepairPet.Enable = 1
+
+# Madosa.MailPet.Enable
+#
+#        Description: Mailbot, a companion pet (2000g, same vendors) that opens your
+#                     mailbox from anywhere.
+#
+#        Default:     1 - Enabled
+#                     0 - Disabled
+#
+Madosa.MailPet.Enable = 1
+
 # Madosa.Addon.Enable
 #
 #        Description: Lets the MadosaControl client addon read and change the

@@ -79,6 +79,8 @@ local LABELS = {
     ["passerbybuff.paladin.kings.enable"]       = "Passerby buff: Paladin - Blessing of Kings",
     ["passerbybuff.paladin.wisdom.enable"]      = "Passerby buff: Paladin - Blessing of Wisdom",
     ["passerbybuff.paladin.might.enable"]       = "Passerby buff: Paladin - Blessing of Might",
+    ["repairpet.enable"]                       = "Repairbot: repair equipment anywhere",
+    ["mailpet.enable"]                         = "Mailbot: open your mailbox anywhere",
 }
 
 -- Control type. Deriving this from the *value* would misread a numeric setting
