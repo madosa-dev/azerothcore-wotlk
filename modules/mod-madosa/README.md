@@ -327,8 +327,17 @@ are substantial enough to stand on their own).
     the effect fires. Built from the same `select_spells()` the SQL import uses,
     clamped identically - a tooltip must not describe behaviour the server does
     not perform.
-  - **SpellIcon.dbc**: +198 rows, plus 348 `.blp` icon files in total that WotLK
-    never shipped.
+  - **SpellIcon.dbc**: +198 rows, plus the `.blp` icon files that WotLK never
+    shipped.
+  - **Item.dbc**: a row per imported item. Easy to miss, because leaving it out
+    fails in a way that looks like something else entirely: the item shows its
+    correct 3D model and a question mark for an icon. The model comes from the
+    displayid the *server* sends with the item, but the inventory icon is looked
+    up through Item.dbc, and an item the client has no row for there falls back
+    to the question mark however good its ItemDisplayInfo row is. Its field order
+    is `ID, Class, Subclass, SoundOverrideSubclass, Material, DisplayInfoID,
+    InventoryType, SheatheType` - verified against this client's own row for item
+    25, "Worn Shortsword": `(25, 2, 7, -1, 1, 1542, 21, 3)`.
 
   It writes `patch-y.mpq` and `patch-enus-z.mpq` - letters checked against this
   client rather than assumed free, since `patch-w` is already taken there by 27 MB

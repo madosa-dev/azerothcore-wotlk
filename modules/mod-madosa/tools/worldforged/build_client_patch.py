@@ -166,6 +166,12 @@ SPELL_STRING_FIELDS = (list(range(136, 152)) + list(range(153, 169))
                        + list(range(170, 186)) + list(range(187, 203)))
 SPELLICON_STRING_FIELDS = [1]
 
+# Item.dbc has no strings at all. Field order verified against this client's own
+# rows: item 25 "Worn Shortsword" reads (25, 2, 7, -1, 1, 1542, 21, 3), matching
+# its item_template row field for field.
+ITEM_DBC_FIELDS = ("class", "subclass", "sound_override_subclass",
+                   "material", "displayid", "inventory_type", "sheath")
+
 
 def append_dbc_rows(blob, rows, string_fields, source):
     """Append rows to a DBC without parsing the ones already in it.
@@ -227,7 +233,7 @@ def worldforged_displays():
     kinds = {}
     for it in items:
         kinds.setdefault(it["displayid"], (it["class"], it["subclass"], it["inventory_type"]))
-    return mapping, kinds
+    return mapping, kinds, items
 
 
 def wotlk_display_donors():
@@ -300,7 +306,7 @@ def main():
     base = DBC(str(base_path))
     print(f"Ascension ItemDisplayInfo: {asc.rc} rows | client's ({base_from}): {base.rc} rows")
 
-    mapping, kinds = worldforged_displays()
+    mapping, kinds, wf_items = worldforged_displays()
     asc_rows = {r[0]: r for r in asc.rows()}
     base_rows = {r[0]: r for r in base.rows()}
     donors = wotlk_display_donors()
@@ -352,6 +358,31 @@ def main():
     dbc_out = OUT / "client_ItemDisplayInfo.dbc"
     total = builder.save(str(dbc_out))
     print(f"ItemDisplayInfo.dbc: {base.rc} -> {total} rows")
+
+    # ---- Item.dbc: what makes the inventory icon resolve -------------------
+    # The model comes from the displayid the server sends with the item, but the
+    # *icon* is looked up through Item.dbc, and an item the client has no row for
+    # falls back to the question mark however good its ItemDisplayInfo row is.
+    # That is the whole reason a Worldforged item could show its true model and a
+    # "?" at the same time.
+    item_blob, item_from = current_client_dbc("Item.dbc")
+    item_path = OUT / "base_Item.dbc"
+    item_path.write_bytes(item_blob)
+    base_items = DBC(str(item_path))
+    known_items = {r[0] for r in base_items.rows()}
+
+    new_items = []
+    for it in wf_items:
+        if it["entry"] in known_items:
+            continue
+        row = [it["entry"]]
+        for field in ITEM_DBC_FIELDS:
+            row.append(mapping.get(it["displayid"], 0) if field == "displayid" else it[field])
+        new_items.append(row)
+
+    patched_items, items_before, items_after = append_dbc_rows(
+        item_blob, new_items, [], base_items)
+    print(f"Item.dbc (from {item_from}): {items_before} -> {items_after} rows")
 
     # ---- the spells behind the item effects -------------------------------
     # The server already knows these (they are imported into spell_dbc); the
@@ -421,6 +452,7 @@ def main():
     print(f"{MY_DATA_ARCHIVE}       {size / 1024 / 1024:6.2f} MB  ({len(files)} icons)")
 
     dbcs = [("DBFilesClient\\ItemDisplayInfo.dbc", dbc_out.read_bytes()),
+            ("DBFilesClient\\Item.dbc", patched_items),
             ("DBFilesClient\\Spell.dbc", patched_spells),
             ("DBFilesClient\\SpellIcon.dbc", patched_icons)]
     size, _ = build(str(OUT / MY_LOCALE_ARCHIVE), dbcs)
