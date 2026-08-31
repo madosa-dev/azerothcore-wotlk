@@ -24,7 +24,7 @@ top (DBCStores.cpp:371), and the store's index table grows to fit ids beyond the
 file's own maximum. So a row here is all the server needs to know a new spell -
 no patched Spell.dbc on the server side, and the import stays versioned SQL like
 everything else. (The *client* still needs its own Spell.dbc row for the tooltip;
-that is what build_item_patch.py handles.)
+that is what build_client_patch.py handles.)
 
 What gets clamped, and why it must be
 -------------------------------------
@@ -192,24 +192,29 @@ def safe_string(dbc, offset):
     return dbc.d[start:end].decode("utf-8", "replace")
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--write", action="store_true",
-                    help="write data/sql/db-world/base/worldforged_ascension_spells.sql")
-    args = ap.parse_args()
+def select_spells(quiet=False):
+    """The spells to import, already clamped, keyed by id.
 
-    columns = spell_dbc_columns()
-    ours = DBC(str(SERVER_DBC / "Spell.dbc"))
-    have = {r[0] for r in ours.rows()}
+    Shared by this tool and the client patch: both sides must agree on exactly
+    which spells exist and on what their effects are, or the tooltip would
+    describe behaviour the server does not perform.
+
+    Returns (rows, ascension_dbc). Rows are plain lists so callers can write
+    them either into SQL or straight back into a DBC.
+    """
+    def say(*a):
+        if not quiet:
+            print(*a, file=sys.stderr)
+
+    have = {r[0] for r in DBC(str(SERVER_DBC / "Spell.dbc")).rows()}
     categories = {r[0] for r in DBC(str(SERVER_DBC / "SpellCategory.dbc")).rows()}
 
     wanted = worldforged_spell_ids()
     missing = wanted - have
-    print(f"Worldforged items reference {len(wanted)} spells; {len(wanted) - len(missing)} already exist here",
-          file=sys.stderr)
+    say(f"Worldforged items reference {len(wanted)} spells; {len(wanted) - len(missing)} already exist here")
 
     asc = DBC(str(ascension_spell_dbc()))
-    print(f"Ascension Spell.dbc: {asc.rc} rows, {asc.fc} fields", file=sys.stderr)
+    say(f"Ascension Spell.dbc: {asc.rc} rows, {asc.fc} fields")
     if asc.fc != 234:
         raise SystemExit(f"Ascension Spell.dbc has {asc.fc} fields, expected 234 - cannot copy rows")
 
@@ -219,8 +224,8 @@ def main():
 
     # Follow every spell a wanted spell casts, and everything those cast in turn,
     # until nothing new turns up. Without this an effect like "Fiery Attack"
-    # imports as a proc that triggers a spell the server has never heard of.
-    wanted_closed, frontier = set(missing), set(missing)
+    # imports as a proc that triggers a spell nothing has ever heard of.
+    closed, frontier = set(missing), set(missing)
     while frontier:
         nxt = set()
         for sid in frontier:
@@ -229,36 +234,50 @@ def main():
                 continue
             for i in F_EFFECT_TRIGGER + (F_CASTER_AURA_SPELL, F_TARGET_AURA_SPELL):
                 ref = row[i]
-                if ref and ref not in have and ref not in wanted_closed:
+                if ref and ref not in have and ref not in closed:
                     nxt.add(ref)
-        wanted_closed |= nxt
+        closed |= nxt
         frontier = nxt
 
-    followed = len(wanted_closed) - len(missing)
-    print(f"  followed {followed} further spell(s) referenced by those", file=sys.stderr)
+    say(f"  followed {len(closed) - len(missing)} further spell(s) referenced by those")
 
-    rows = {sid: by_id[sid] for sid in wanted_closed if sid in by_id}
-    absent = sorted(wanted_closed - set(rows))
+    absent = sorted(closed - set(by_id))
     if absent:
-        print(f"  WARNING: {len(absent)} not in Ascension's DBC either: {absent[:8]}", file=sys.stderr)
+        say(f"  WARNING: {len(absent)} not in Ascension's DBC either: {absent[:8]}")
 
-    clamped_effects = clamped_auras = clamped_categories = 0
+    rows = {}
+    effects = auras = cats = 0
+    for sid in sorted(closed & set(by_id)):
+        row = list(by_id[sid])
+        for i in F_EFFECT:
+            if row[i] > MAX_EFFECT:
+                row[i] = 0
+                effects += 1
+        for i in F_EFFECT_AURA:
+            if row[i] > MAX_AURA:
+                row[i] = 0
+                auras += 1
+        if row[F_CATEGORY] and row[F_CATEGORY] not in categories:
+            row[F_CATEGORY] = 0
+            cats += 1
+        rows[sid] = row
+
+    say(f"  clamped {effects} out-of-range effect(s), {auras} aura(s), {cats} category reference(s)")
+    return rows, asc
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--write", action="store_true",
+                    help="write data/sql/db-world/base/worldforged_ascension_spells.sql")
+    args = ap.parse_args()
+
+    columns = spell_dbc_columns()
+    rows, asc = select_spells()
+
     values = []
     for sid in sorted(rows):
-        src = list(rows[sid])
-
-        for i in F_EFFECT:
-            if src[i] > MAX_EFFECT:
-                src[i] = 0
-                clamped_effects += 1
-        for i in F_EFFECT_AURA:
-            if src[i] > MAX_AURA:
-                src[i] = 0
-                clamped_auras += 1
-        if src[F_CATEGORY] and src[F_CATEGORY] not in categories:
-            src[F_CATEGORY] = 0
-            clamped_categories += 1
-
+        src = rows[sid]
         cells = []
         for i, (name, kind, unsigned) in enumerate(columns):
             raw = src[i]
@@ -272,9 +291,6 @@ def main():
                 cells.append(str(as_signed(raw)))
         values.append("(" + ",".join(cells) + ")")
 
-    print(f"  clamped {clamped_effects} out-of-range effect(s), {clamped_auras} aura(s), "
-          f"{clamped_categories} category reference(s)", file=sys.stderr)
-
     column_list = ",".join(f"`{name}`" for name, _, _ in columns)
     sql = (
         "-- The spells behind Ascension's Worldforged item effects.\n"
@@ -287,7 +303,7 @@ def main():
         "-- overlays that table on top of the file and grows its index table to fit ids\n"
         "-- past the file's maximum - so a row here is all the server needs to know a\n"
         "-- new spell. The client needs its own Spell.dbc row for the tooltip; that is\n"
-        "-- what tools/worldforged/build_item_patch.py supplies.\n"
+        "-- what tools/worldforged/build_client_patch.py supplies.\n"
         "--\n"
         "-- Effect ids above 164 and aura ids above 316 are zeroed on import. That is not\n"
         "-- tidiness: AuraEffect::HandleEffect indexes a fixed AuraEffectHandler[317]\n"

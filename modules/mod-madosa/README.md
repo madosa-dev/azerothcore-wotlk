@@ -265,17 +265,45 @@ are substantial enough to stand on their own).
   players stream caches in and only real players can open one, for the same
   reason as everywhere else in this module.
 
-  **`tools/worldforged/build_item_patch.py`** supplies the look. The item *data*
-  needs no client patch at all - in 3.3.5a the client asks the server for item
-  templates - but the appearance is client-side. 914 of the 1415 displays already
-  exist in this client; the patch adds the other 501 plus the 192 icon files they
-  name that WotLK never shipped (Ascension imported them from later expansions,
-  or drew their own). 66 rows name a 3D model this client lacks, affecting 116 of
-  2615 items; those keep their correct Ascension icon and borrow the model of a
-  WotLK item of the same class and slot, so nothing renders broken. It writes
-  `patch-w.mpq` and `patch-enus-z.mpq`, deliberately after `clientpatch`'s own
-  `patch-v` / `patch-enus-y`, and builds its DBC on top of whatever the client
-  reads today - so **run it after `clientpatch/build_patches.py`, never before**.
+  **The effects come across too.** `build_ascension_spells.py` imports the 896
+  spells behind them - the 594 named on items, plus the 307 those cast in turn,
+  because "Fiery Attack" does its damage through a second spell and importing
+  only the first leaves the proc firing into nothing. They come from Ascension's
+  own Spell.dbc (in `patch-T.MPQ`, not a locale archive): 209 MB and 209294
+  spells against this client's 49 MB and 49840, but the layout is untouched, so a
+  spell carries over as a straight row copy. They go into **`spell_dbc`** rather
+  than a patched server-side file, because DBCStores overlays that table on the
+  file and grows its index table past the file's maximum - so a row there is all
+  the server needs to know a new spell.
+
+  Effect ids above 164 and aura ids above 316 are zeroed on the way in, and not
+  for tidiness: `AuraEffect::HandleEffect` indexes a fixed
+  `AuraEffectHandler[TOTAL_AURAS]` array with the aura id and bounds-checks
+  nothing (`SpellAuraEffects.cpp:793`), so one of Ascension's 354s would call
+  past the end of it. That costs 22 spells their custom behaviour; the other 559
+  use nothing but stock WotLK effects and auras and work here as they did there.
+
+  **`tools/worldforged/build_client_patch.py`** supplies everything client-side.
+  Neither item templates nor spell behaviour need a client patch - the client
+  asks the server for the first and the server performs the second - but the
+  *look and the tooltip text* are client-side:
+  - **ItemDisplayInfo**: 914 of the 1415 displays already exist here; it adds the
+    other 501. 66 of those name a 3D model this client lacks, affecting 116 of
+    2625 items; they keep their correct Ascension icon and borrow the model of a
+    WotLK item of the same class and slot, so nothing renders broken.
+  - **Spell.dbc**: +896 rows, or an item's effect line would be blank even though
+    the effect fires. Built from the same `select_spells()` the SQL import uses,
+    clamped identically - a tooltip must not describe behaviour the server does
+    not perform.
+  - **SpellIcon.dbc**: +198 rows, plus 348 `.blp` icon files in total that WotLK
+    never shipped.
+
+  It writes `patch-y.mpq` and `patch-enus-z.mpq` - letters checked against this
+  client rather than assumed free, since `patch-w` is already taken there by 27 MB
+  of other content. Its DBCs are built on top of whatever the client reads today,
+  so `clientpatch`'s own rows survive (its XP Boost spell is still there
+  afterwards, which is the check worth repeating) - and that also means **run it
+  after `clientpatch/build_patches.py`, never before**.
 
 ## Live-tunable settings (`MadosaSettings`)
 

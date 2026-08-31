@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Client patch for the Ascension Worldforged items' appearance.
 
-    python3 build_item_patch.py              # build into ./out and report
-    python3 build_item_patch.py --install    # ... and copy into the client
+    python3 build_client_patch.py              # build into ./out and report
+    python3 build_client_patch.py --install    # ... and copy into the client
 
 The item *data* (name, stats, slot) needs no client patch at all - in 3.3.5a the
 client asks the server for item templates. Only the look is client-side, and it
@@ -153,10 +153,59 @@ def current_client_dbc(name):
         if priority is not None:
             candidates.append((priority, filename))
     for _, filename in sorted(candidates, reverse=True):
-        blob = MPQ(str(LOCALE_DIR / filename)).read_file("DBFilesClient\\ItemDisplayInfo.dbc")
+        blob = MPQ(str(LOCALE_DIR / filename)).read_file(f"DBFilesClient\\{name}")
         if blob:
             return blob, filename
     raise SystemExit(f"no enabled locale archive provides {name}")
+
+
+# Spell.dbc string fields: the four 16-slot locale blocks (name, subtext,
+# description, aura description). The mask that follows each block is an integer
+# and must not be treated as an offset.
+SPELL_STRING_FIELDS = (list(range(136, 152)) + list(range(153, 169))
+                       + list(range(170, 186)) + list(range(187, 203)))
+SPELLICON_STRING_FIELDS = [1]
+
+
+def append_dbc_rows(blob, rows, string_fields, source):
+    """Append rows to a DBC without parsing the ones already in it.
+
+    Spell.dbc is ~49 MB and reading its 49840 records into Python lists costs
+    hundreds of megabytes, so the existing records are left as the bytes they
+    already are and the new ones are packed on the end - the same trick
+    clientpatch uses on this file.
+
+    `rows` are field lists taken from `source`; their string offsets point into
+    *its* string block, so each one is re-read from there and re-added here.
+    """
+    _, rc, fc, rs, sb = struct.unpack_from("<4sIIII", blob, 0)
+    records = bytearray(blob[20:20 + rc * rs])
+    strings = bytearray(blob[20 + rc * rs:20 + rc * rs + sb])
+
+    def addstr(text):
+        if not text:
+            return 0
+        offset = len(strings)
+        strings.extend(text.encode("latin1", "replace") + b"\x00")
+        return offset
+
+    for row in rows:
+        out = list(row)
+        for i in string_fields:
+            out[i] = addstr(read_dbc_string(source, row[i]))
+        records.extend(struct.pack(f"<{fc}I", *[v & 0xFFFFFFFF for v in out]))
+
+    header = struct.pack("<4sIIII", b"WDBC", rc + len(rows), fc, rs, len(strings))
+    return header + bytes(records) + bytes(strings), rc, rc + len(rows)
+
+
+def read_dbc_string(dbc, offset):
+    """dbc.s() with bounds checks - a few Ascension rows carry a stray offset."""
+    if not offset or offset >= dbc.sb:
+        return ""
+    start = dbc.sblock + offset
+    end = dbc.d.find(b"\0", start, dbc.sblock + dbc.sb)
+    return "" if end < 0 else dbc.d[start:end].decode("latin1")
 
 
 # --------------------------------------------------------------------------
@@ -285,12 +334,59 @@ def main():
 
     print(f"  {substituted} rows had a model this client lacks and borrowed a WotLK one")
 
-    # Icons: only the ones the client really does not have.
+    dbc_out = OUT / "client_ItemDisplayInfo.dbc"
+    total = builder.save(str(dbc_out))
+    print(f"ItemDisplayInfo.dbc: {base.rc} -> {total} rows")
+
+    # ---- the spells behind the item effects -------------------------------
+    # The server already knows these (they are imported into spell_dbc); the
+    # client needs its own rows or the tooltip has nothing to print. Both sides
+    # take the same selection, clamped the same way, from select_spells().
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from build_ascension_spells import select_spells
+
+    print("selecting spells ...")
+    spells, asc_spell_dbc = select_spells(quiet=True)
+
+    spell_blob, spell_from = current_client_dbc("Spell.dbc")
+    patched_spells, before, after = append_dbc_rows(
+        spell_blob, list(spells.values()), SPELL_STRING_FIELDS, asc_spell_dbc)
+    print(f"Spell.dbc (from {spell_from}): {before} -> {after} rows")
+
+    # Their icons. Ascension's SpellIcon rows name .blp files, most of which this
+    # client already has; only the genuinely absent ones are carried over.
+    icon_blob, icon_from = current_client_dbc("SpellIcon.dbc")
+    icon_path = OUT / "base_SpellIcon.dbc"
+    icon_path.write_bytes(icon_blob)
+    client_icons = {r[0] for r in DBC(str(icon_path)).rows()}
+
+    asc_icon_path = OUT / "ascension_SpellIcon.dbc"
+    if not asc_icon_path.exists():
+        for a in ascension_archives:
+            blob = a.read("DBFilesClient\\SpellIcon.dbc")
+            if blob:
+                asc_icon_path.write_bytes(blob)
+                break
+    asc_icons = DBC(str(asc_icon_path))
+    asc_icon_rows = {r[0]: r for r in asc_icons.rows()}
+
+    wanted_icons = {row[i] for row in spells.values() for i in (133, 134) if row[i]}
+    new_icons = [asc_icon_rows[i] for i in sorted(wanted_icons - client_icons) if i in asc_icon_rows]
+    patched_icons, icons_before, icons_after = append_dbc_rows(
+        icon_blob, new_icons, SPELLICON_STRING_FIELDS, asc_icons)
+    print(f"SpellIcon.dbc (from {icon_from}): {icons_before} -> {icons_after} rows")
+
+    for row in new_icons:
+        path = read_dbc_string(asc_icons, row[1])
+        if path:
+            icons_needed.add(path.split("\\")[-1])
+
     missing_icons = sorted(i for i in icons_needed
                            if not any(a.has(f"Interface\\Icons\\{i}.blp") for a in client_archives))
-    print(f"icons referenced: {len(icons_needed)}, missing from this client: {len(missing_icons)}")
+    print(f"total icons referenced: {len(icons_needed)}, still missing: {len(missing_icons)}")
 
-    files, not_found = [], []
+    files = []
+    not_found = []
     for icon in missing_icons:
         name = f"Interface\\Icons\\{icon}.blp"
         blob = None
@@ -303,20 +399,17 @@ def main():
             files.append((name, blob))
         else:
             not_found.append(icon)
-
     if not_found:
         print(f"  WARNING: {len(not_found)} icons not readable from Ascension either: {not_found[:8]}")
-
-    dbc_out = OUT / "client_ItemDisplayInfo.dbc"
-    total = builder.save(str(dbc_out))
-    print(f"ItemDisplayInfo.dbc: {base.rc} -> {total} rows")
 
     size, _ = build(str(OUT / MY_DATA_ARCHIVE), files)
     print(f"{MY_DATA_ARCHIVE}       {size / 1024 / 1024:6.2f} MB  ({len(files)} icons)")
 
-    size, _ = build(str(OUT / MY_LOCALE_ARCHIVE),
-                    [("DBFilesClient\\ItemDisplayInfo.dbc", dbc_out.read_bytes())])
-    print(f"{MY_LOCALE_ARCHIVE}  {size / 1024 / 1024:6.2f} MB  (1 DBC)")
+    dbcs = [("DBFilesClient\\ItemDisplayInfo.dbc", dbc_out.read_bytes()),
+            ("DBFilesClient\\Spell.dbc", patched_spells),
+            ("DBFilesClient\\SpellIcon.dbc", patched_icons)]
+    size, _ = build(str(OUT / MY_LOCALE_ARCHIVE), dbcs)
+    print(f"{MY_LOCALE_ARCHIVE}  {size / 1024 / 1024:6.2f} MB  ({len(dbcs)} DBCs)")
 
     if args.install:
         shutil.copy(OUT / MY_DATA_ARCHIVE, CLIENT / "data" / MY_DATA_ARCHIVE)

@@ -8,7 +8,7 @@
 -- overlays that table on top of the file and grows its index table to fit ids
 -- past the file's maximum - so a row here is all the server needs to know a
 -- new spell. The client needs its own Spell.dbc row for the tooltip; that is
--- what tools/worldforged/build_item_patch.py supplies.
+-- what tools/worldforged/build_client_patch.py supplies.
 --
 -- Effect ids above 164 and aura ids above 316 are zeroed on import. That is not
 -- tidiness: AuraEffect::HandleEffect indexes a fixed AuraEffectHandler[317]
