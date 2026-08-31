@@ -63,6 +63,13 @@ namespace MadosaSettings
     bool GetRepairPetEnable();
     bool GetMailPetEnable();
     bool GetOmniPetEnable();
+    bool GetWorldforgedEnable();
+    bool GetWorldforgedAnnounce();
+    uint32 GetWorldforgedInterval();
+    uint32 GetWorldforgedLifetime();
+    uint32 GetWorldforgedMaxActive();
+    uint32 GetWorldforgedRareChance();
+    uint32 GetWorldforgedGoldPerLevel();
 
     // Parses and applies value for key, persisting it to the DB override
     // table. Returns false (and fills outError) if key is unknown or value

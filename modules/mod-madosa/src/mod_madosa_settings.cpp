@@ -28,6 +28,7 @@
 #include "Config.h"
 #include "Log.h"
 #include "ScriptMgr.h"
+#include "StringFormat.h"
 #include "WorldDatabase.h"
 
 #include <algorithm>
@@ -58,6 +59,13 @@ namespace
     std::atomic<bool> repairPetEnable{true};
     std::atomic<bool> mailPetEnable{true};
     std::atomic<bool> omniPetEnable{true};
+    std::atomic<bool> worldforgedEnable{true};
+    std::atomic<bool> worldforgedAnnounce{true};
+    std::atomic<uint32> worldforgedInterval{20};
+    std::atomic<uint32> worldforgedLifetime{30};
+    std::atomic<uint32> worldforgedMaxActive{1};
+    std::atomic<uint32> worldforgedRareChance{15};
+    std::atomic<uint32> worldforgedGoldPerLevel{500};
 
     // Every feature toggle behaves identically, so they share one table instead
     // of repeating the same parse/validate/store block per key. Madosa.Addon.Enable
@@ -90,7 +98,44 @@ namespace
         { "repairpet.enable",         "Madosa.RepairPet.Enable",           &repairPetEnable,         true },
         { "mailpet.enable",           "Madosa.MailPet.Enable",             &mailPetEnable,           true },
         { "omnipet.enable",           "Madosa.OmniPet.Enable",             &omniPetEnable,           true },
+        { "worldforged.enable",       "Madosa.Worldforged.Enable",         &worldforgedEnable,       true },
+        { "worldforged.announce",     "Madosa.Worldforged.Announce",       &worldforgedAnnounce,     true },
     };
+
+    // The numeric settings share the same shape too - a slot, a config key, a
+    // default and the range a GM may set them to - so the parse/validate/store
+    // block lives in one place instead of once per key. Only settings whose
+    // valid range is a plain interval belong here; anything needing a different
+    // check stays hand-written in Set().
+    struct UIntSetting
+    {
+        char const* key;
+        char const* configKey;
+        std::atomic<uint32>* slot;
+        uint32 configDefault;
+        uint32 min;
+        uint32 max;
+    };
+
+    UIntSetting const uintSettings[] =
+    {
+        // Interval and lifetime: a day is the longest that still reads as
+        // "recurring", one minute the shortest that leaves time to travel there.
+        { "worldforged.interval",     "Madosa.Worldforged.IntervalMinutes", &worldforgedInterval,     20,  1,   1440 },
+        { "worldforged.lifetime",     "Madosa.Worldforged.LifetimeMinutes", &worldforgedLifetime,     30,  1,   1440 },
+        // Each standing cache keeps its own grid resident, so the cap stays low.
+        { "worldforged.maxactive",    "Madosa.Worldforged.MaxActive",       &worldforgedMaxActive,     1,  1,     10 },
+        { "worldforged.rarechance",   "Madosa.Worldforged.RareChance",      &worldforgedRareChance,   15,  0,    100 },
+        { "worldforged.goldperlevel", "Madosa.Worldforged.GoldPerLevel",    &worldforgedGoldPerLevel, 500, 0, 100000 },
+    };
+
+    UIntSetting const* FindUIntSetting(std::string const& key)
+    {
+        for (UIntSetting const& setting : uintSettings)
+            if (key == setting.key)
+                return &setting;
+        return nullptr;
+    }
 
     BoolSetting const* FindBoolSetting(std::string const& key)
     {
@@ -173,6 +218,9 @@ namespace
         for (BoolSetting const& setting : boolSettings)
             *setting.slot = sConfigMgr->GetOption<bool>(setting.configKey, setting.configDefault);
 
+        for (UIntSetting const& setting : uintSettings)
+            *setting.slot = sConfigMgr->GetOption<uint32>(setting.configKey, setting.configDefault);
+
         professionXPPercent = sConfigMgr->GetOption<float>("Madosa.ProfessionXP.PercentOfLevelXP", 1.0f);
         professionXPSkillMultiplier = sConfigMgr->GetOption<uint32>("Madosa.ProfessionXP.SkillGainMultiplier", 2);
         professionSlotsMax = sConfigMgr->GetOption<uint32>("Madosa.ProfessionSlots.Max", 5);
@@ -196,6 +244,9 @@ namespace
             uint32 u;
             if (BoolSetting const* setting = FindBoolSetting(key); setting && ParseBool(value, b))
                 *setting->slot = b;
+            else if (UIntSetting const* setting = FindUIntSetting(key);
+                     setting && ParseUInt(value, u) && u >= setting->min && u <= setting->max)
+                *setting->slot = u;
             else if (key == "professionxp.percent" && ParseFloat(value, f))
                 professionXPPercent = f;
             else if (key == "professionxp.skillmultiplier" && ParseUInt(value, u))
@@ -233,6 +284,15 @@ namespace MadosaSettings
     bool GetRepairPetEnable() { return repairPetEnable.load(); }
     bool GetMailPetEnable() { return mailPetEnable.load(); }
     bool GetOmniPetEnable() { return omniPetEnable.load(); }
+    bool GetWorldforgedEnable() { return worldforgedEnable.load(); }
+    bool GetWorldforgedAnnounce() { return worldforgedAnnounce.load(); }
+    // Clamped rather than trusted: a 0 here would forge every tick, or make a
+    // cache expire the instant it appears.
+    uint32 GetWorldforgedInterval() { return std::max<uint32>(1, worldforgedInterval.load()); }
+    uint32 GetWorldforgedLifetime() { return std::max<uint32>(1, worldforgedLifetime.load()); }
+    uint32 GetWorldforgedMaxActive() { return std::max<uint32>(1, worldforgedMaxActive.load()); }
+    uint32 GetWorldforgedRareChance() { return std::min<uint32>(100, worldforgedRareChance.load()); }
+    uint32 GetWorldforgedGoldPerLevel() { return worldforgedGoldPerLevel.load(); }
 
     void Init()
     {
@@ -251,6 +311,17 @@ namespace MadosaSettings
                 return false;
             }
             *setting->slot = b;
+        }
+        else if (UIntSetting const* setting = FindUIntSetting(key))
+        {
+            uint32 u;
+            if (!ParseUInt(value, u) || u < setting->min || u > setting->max)
+            {
+                outError = Acore::StringFormat("value must be a whole number between {} and {}",
+                    setting->min, setting->max);
+                return false;
+            }
+            *setting->slot = u;
         }
         else if (key == "professionxp.percent")
         {
@@ -308,7 +379,7 @@ namespace MadosaSettings
 
     bool Reset(std::string const& key, std::string& outError)
     {
-        if (!FindBoolSetting(key) && key != "professionxp.percent" &&
+        if (!FindBoolSetting(key) && !FindUIntSetting(key) && key != "professionxp.percent" &&
             key != "professionxp.skillmultiplier" && key != "professionslots.max" &&
             key != "passerbybuff.radius")
         {
@@ -332,6 +403,8 @@ namespace MadosaSettings
         out.push_back({ "professionxp.skillmultiplier", std::to_string(GetProfessionXPSkillMultiplier()) });
         out.push_back({ "professionslots.max", std::to_string(GetProfessionSlotsMax()) });
         out.push_back({ "passerbybuff.radius", FloatToStr(GetPasserbyBuffRadius()) });
+        for (UIntSetting const& setting : uintSettings)
+            out.push_back({ setting.key, std::to_string(setting.slot->load()) });
         for (BoolSetting const& setting : boolSettings)
             if (std::string(setting.key) != "professionxp.enable")
                 out.push_back({ setting.key, BoolToStr(setting.slot->load()) });

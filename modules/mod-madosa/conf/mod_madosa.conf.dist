@@ -234,6 +234,89 @@ Madosa.MailPet.Enable = 1
 #
 Madosa.OmniPet.Enable = 1
 
+# Madosa.Worldforged.Enable
+#
+#        Description: Worldforged. Every so often the server forges a "Worldforged
+#                     Cache" at one of the spots in mod_madosa_worldforged_spawns,
+#                     announces the zone to everyone online, and whoever gets there
+#                     first opens it for a randomly enchanted piece of gear scaled
+#                     to their own level, plus some gold. Only real players can open
+#                     one - on a realm with thousands of playerbots the event would
+#                     otherwise never reach a person.
+#
+#                     A cache is only forged while at least one real player is
+#                     online, and its spot is chosen to suit one of their levels.
+#
+#        Default:     1 - Enabled
+#                     0 - Disabled
+#
+Madosa.Worldforged.Enable = 1
+
+# Madosa.Worldforged.Announce
+#
+#        Description: Announce to every online player when a cache is forged (naming
+#                     its zone, never its exact spot - finding it is the point), when
+#                     one is claimed, and when one crumbles away unclaimed. With this
+#                     off the event still runs, but only whoever stumbles over a cache
+#                     will ever know about it.
+#
+#        Default:     1 - Enabled
+#                     0 - Disabled
+#
+Madosa.Worldforged.Announce = 1
+
+# Madosa.Worldforged.IntervalMinutes
+#
+#        Description: Minutes between forge attempts. An attempt that finds nobody
+#                     online waits out the full interval again rather than retrying,
+#                     so this is the pace of the event whether or not anyone is there.
+#
+#        Default:     20
+#
+Madosa.Worldforged.IntervalMinutes = 20
+
+# Madosa.Worldforged.LifetimeMinutes
+#
+#        Description: How long a cache stands before it crumbles away. Give players
+#                     enough time to cross a continent - much below the travel time
+#                     of your realm and the announcement becomes a tease.
+#
+#        Default:     30
+#
+Madosa.Worldforged.LifetimeMinutes = 30
+
+# Madosa.Worldforged.MaxActive
+#
+#        Description: How many caches may stand at once. Each one keeps the map grid
+#                     it spawned in resident for the rest of the uptime (this core
+#                     never unloads grids at runtime), so raise this only if your
+#                     realm has the players to chase them.
+#
+#        Default:     1
+#
+Madosa.Worldforged.MaxActive = 1
+
+# Madosa.Worldforged.RareChance
+#
+#        Description: Percent chance that a cache holds a rare (blue) item instead of
+#                     an uncommon (green) one. Below level 20 there are no forgeable
+#                     blues in WotLK's item data, so a roll that early falls back to
+#                     a green either way.
+#
+#        Default:     15
+#
+Madosa.Worldforged.RareChance = 15
+
+# Madosa.Worldforged.GoldPerLevel
+#
+#        Description: Copper per character level handed out alongside the item, varied
+#                     by +/-20%. At the default a level 80 character finds around 4
+#                     gold. Set to 0 for no money at all.
+#
+#        Default:     500
+#
+Madosa.Worldforged.GoldPerLevel = 500
+
 # Madosa.Addon.Enable
 #
 #        Description: Lets the MadosaControl client addon read and change the
