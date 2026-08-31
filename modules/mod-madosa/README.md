@@ -255,6 +255,13 @@ are substantial enough to stand on their own).
   at those. Both the SQL and the client patch derive the mapping from the same
   `selected_items()`, so they cannot disagree.
 
+  **Delete the client's item cache after regenerating the items.** WoW writes
+  every item the server ever sent it to `Cache/WDB/<locale>/itemcache.wdb` and
+  never asks again, so a character who already saw an item keeps its old
+  appearance no matter what the server now says - which looks exactly like a
+  broken patch. Removing that file (the client rebuilds it on next login) is part
+  of the workflow, not troubleshooting.
+
   **One find per item, per character.** A character may claim each distinct
   Worldforged item once, tracked in `character_worldforged_ascension_loot`. That
   table is keyed by *item*, not by spot, because the 1509 items are spread over
