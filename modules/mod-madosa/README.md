@@ -270,8 +270,9 @@ are substantial enough to stand on their own).
   streaming scan knows about it, so a cache you have finished simply stops
   appearing rather than standing there to refuse you, and the world visibly
   empties out as your collection fills up. The per-spot respawn timer stays
-  A cache is never consumed - it stands where it stands for anyone who has not
-  claimed its item, and simply stops appearing for whoever has.
+  A cache is never consumed and never removed: it stands where it stands, for
+  everyone, and claiming its item only records that this character has had it.
+  Clicking one you have finished says so rather than handing out a second copy.
 
   **Two things about the placement**, both found by walking to a spot in-game.
   LootCollector records one find *per player*, so a single Ascension chest
@@ -307,6 +308,17 @@ are substantial enough to stand on their own).
   than a patched server-side file, because DBCStores overlays that table on the
   file and grows its index table past the file's maximum - so a row there is all
   the server needs to know a new spell.
+
+  **PvE and PvP Power do something now.** Both are stats Ascension invented, and
+  the spells carrying them are `SPELL_EFFECT_DUMMY` - a placeholder that does
+  nothing at all without server code behind it, which meant 1926 of the items
+  promised something in their tooltip and delivered nothing. Each is rewritten
+  into the nearest real WotLK aura, description included so the tooltip stops
+  lying. PvP Power becomes resilience, which is the same idea under another name
+  and carries over one for one. PvE Power has no equivalent at all, so it becomes
+  a flat damage bonus - and its scale (`PVE_POWER_PER_PERCENT`) is the one number
+  in this whole import that is invented rather than Ascension's. At 24 the +48
+  items give 2% and the +96 ones 4%, keeping their relative worth intact.
 
   Effect ids above 164 and aura ids above 316 are zeroed on the way in, and not
   for tidiness: `AuraEffect::HandleEffect` indexes a fixed

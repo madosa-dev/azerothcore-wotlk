@@ -51,11 +51,10 @@
 // Dagger at one of them finishes every other spot holding one, instead of
 // letting you farm duplicates a few hills apart.
 //
-// A cache is never consumed: it stands where it stands for anyone who has not
-// claimed its item yet, and simply stops appearing for whoever has. There is no
-// respawn timer, because there is nothing to respawn - the world empties out
-// per character as a collection fills up, and a fresh character finds every spot
-// still holding what it always held.
+// A cache is never consumed and never removed: it stands where it stands, for
+// everyone, and claiming its item only records that this character has had it.
+// There is no respawn timer because nothing ever despawns, and a fresh character
+// finds every spot still holding what it always held.
 
 #include "mod_madosa_settings.h"
 
@@ -204,12 +203,12 @@ namespace
         return claimed != claimedItems.end() && claimed->second.count(item);
     }
 
-    // A cache is only worth existing for someone who can still take what is in
-    // it, so "in range" means "in range of a player who has not claimed this item
-    // yet". That is what makes the world visibly empty out as a character
-    // collects, instead of leaving chests standing that would only refuse them.
+    // The nearest real player within range, or nothing. A cache stands wherever
+    // it stands for everyone: claiming its item stops you taking it again, but it
+    // does not take the chest out of the world - the landscape keeps its
+    // treasures whether or not this particular character is done with them.
     // Callers hold stateMutex.
-    Watcher const* NeededNearby(SpawnPoint const& point, std::vector<Watcher> const& watchers, float range)
+    Watcher const* NearestWatcher(SpawnPoint const& point, std::vector<Watcher> const& watchers, float range)
     {
         float rangeSq = range * range;
         Watcher const* best = nullptr;
@@ -224,9 +223,6 @@ namespace
             float dy = w.y - point.y;
             float distSq = dx * dx + dy * dy;
             if (distSq > rangeSq || distSq > bestDistSq)
-                continue;
-
-            if (AlreadyClaimed(w.guid, point.item))
                 continue;
 
             // The nearest of them, because their height is what the ground search
@@ -389,10 +385,8 @@ namespace
                 auto live = liveCaches.find(point.id);
                 if (live != liveCaches.end())
                 {
-                    // Standing: keep it until nobody near it still wants it -
-                    // everyone walked well away, or the one person here just
-                    // claimed this item.
-                    if (!NeededNearby(point, watchers, STREAM_OUT_RANGE))
+                    // Standing: keep it until everyone has walked well away.
+                    if (!NearestWatcher(point, watchers, STREAM_OUT_RANGE))
                     {
                         toDespawn.push_back({ point.map, live->second });
                         cacheOwners.erase(live->second);
@@ -401,7 +395,7 @@ namespace
                     continue;
                 }
 
-                if (Watcher const* watcher = NeededNearby(point, watchers, STREAM_IN_RANGE))
+                if (Watcher const* watcher = NearestWatcher(point, watchers, STREAM_IN_RANGE))
                     toSpawn.push_back({ &point, watcher->z });
             }
         }
@@ -558,15 +552,9 @@ public:
         player->SendNewItem(created, 1, true, false);
         RecordClaim(playerGuid, item);
 
-        // Claim the spot before removing the object, so a second click in the same
-        // tick finds nothing to claim.
-        {
-            std::lock_guard<std::mutex> lock(stateMutex);
-            cacheOwners.erase(go->GetGUID());
-            liveCaches.erase(pointId);
-        }
-
-        go->Delete();
+        // The chest stays. Claiming its item is recorded against the character,
+        // not against the world, so the next click tells this player they have
+        // already had it while anyone else still finds it waiting.
         return true;
     }
 };

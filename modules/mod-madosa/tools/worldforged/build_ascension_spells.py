@@ -79,6 +79,34 @@ F_NAME = 136
 # nothing. So the import follows these references until the set closes.
 F_EFFECT_TRIGGER = (116, 117, 118)
 F_CASTER_AURA_SPELL, F_TARGET_AURA_SPELL = 24, 25
+F_BASE_POINTS = (80, 81, 82)
+F_MISC_VALUE = (110, 111, 112)
+F_DESCRIPTION = 170
+
+# Ascension's "PvE Power" and "PvP Power" are stats it invented; WotLK has no
+# such thing, and the spells carrying them are SPELL_EFFECT_DUMMY - a placeholder
+# that does nothing at all unless server code implements it. Imported as they
+# are, 1926 of the items would promise something in their tooltip and deliver
+# nothing, so each is rewritten into the nearest real WotLK aura.
+#
+# PvP Power becomes resilience, which is the same idea by another name and needs
+# no invented scale: the number carries over one for one.
+#
+# PvE Power has no equivalent, so it becomes a flat damage bonus and the scale is
+# a judgement call - PVE_POWER_PER_PERCENT is it, and it is the one number here
+# that is mine rather than Ascension's. At 24, the +48 items give 2% and the +96
+# ones 4%, which keeps their relative worth intact.
+SPELL_EFFECT_APPLY_AURA = 6
+SPELL_AURA_MOD_DAMAGE_PERCENT_DONE = 79
+SPELL_AURA_MOD_RATING = 189
+
+# (1 << CR_CRIT_TAKEN_MELEE) | RANGED | SPELL, with CR_CRIT_TAKEN_MELEE = 14.
+# Verified against "Increased Resilience 35", which uses exactly this mask.
+RESILIENCE_RATING_MASK = (1 << 14) | (1 << 15) | (1 << 16)
+ALL_SPELL_SCHOOLS = 127
+PVE_POWER_PER_PERCENT = 24
+
+POWER_SPELL = re.compile(r"^(PvE|PvP) Power \(\+(\d+)\)$")
 
 
 def parse_db_info(key):
@@ -246,7 +274,8 @@ def select_spells(quiet=False):
         say(f"  WARNING: {len(absent)} not in Ascension's DBC either: {absent[:8]}")
 
     rows = {}
-    effects = auras = cats = 0
+    overrides = {}
+    effects = auras = cats = powers = 0
     for sid in sorted(closed & set(by_id)):
         row = list(by_id[sid])
         for i in F_EFFECT:
@@ -260,10 +289,47 @@ def select_spells(quiet=False):
         if row[F_CATEGORY] and row[F_CATEGORY] not in categories:
             row[F_CATEGORY] = 0
             cats += 1
+        if translate_power_stat(row, asc, overrides):
+            powers += 1
+
         rows[sid] = row
 
     say(f"  clamped {effects} out-of-range effect(s), {auras} aura(s), {cats} category reference(s)")
-    return rows, asc
+    say(f"  turned {powers} PvE/PvP Power placeholder(s) into real WotLK auras")
+    return rows, asc, overrides
+
+
+def translate_power_stat(row, asc, overrides):
+    """Rewrite a PvE/PvP Power dummy into an aura this server actually applies.
+
+    Everything else about the spell is already right - it targets the caster,
+    needs no equipped item class, has no duration - so only the effect, its aura,
+    its value and its mask change, plus the description, which would otherwise go
+    on describing a stat that no longer exists.
+    """
+    match = POWER_SPELL.match(safe_string(asc, row[F_NAME]))
+    if not match:
+        return False
+
+    kind, amount = match.group(1), int(match.group(2))
+    row[F_EFFECT[0]] = SPELL_EFFECT_APPLY_AURA
+
+    if kind == "PvP":
+        row[F_EFFECT_AURA[0]] = SPELL_AURA_MOD_RATING
+        row[F_MISC_VALUE[0]] = RESILIENCE_RATING_MASK
+        value = amount
+        description = f"Increases your resilience by {amount}."
+    else:
+        row[F_EFFECT_AURA[0]] = SPELL_AURA_MOD_DAMAGE_PERCENT_DONE
+        row[F_MISC_VALUE[0]] = ALL_SPELL_SCHOOLS
+        value = max(1, round(amount / PVE_POWER_PER_PERCENT))
+        description = f"Increases damage done by {value}%."
+
+    # The client and server both read this as "base points + 1", which is why
+    # "Increased Resilience 35" stores 34.
+    row[F_BASE_POINTS[0]] = (value - 1) & 0xFFFFFFFF
+    overrides.setdefault(row[0], {})[F_DESCRIPTION] = description
+    return True
 
 
 def main():
@@ -273,7 +339,7 @@ def main():
     args = ap.parse_args()
 
     columns = spell_dbc_columns()
-    rows, asc = select_spells()
+    rows, asc, overrides = select_spells()
 
     values = []
     for sid in sorted(rows):
@@ -284,7 +350,8 @@ def main():
             if kind == "float":
                 cells.append(f"{as_float(raw):g}")
             elif kind in ("varchar", "text"):
-                cells.append(f"'{esc(safe_string(asc, raw))}'")
+                text = overrides.get(sid, {}).get(i)
+                cells.append(f"'{esc(text if text is not None else safe_string(asc, raw))}'")
             elif unsigned:
                 cells.append(str(raw & 0xFFFFFFFF))
             else:

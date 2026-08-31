@@ -175,7 +175,7 @@ ITEM_DBC_FIELDS = ("class", "subclass", "sound_override_subclass",
                    "material", "displayid", "inventory_type", "sheath")
 
 
-def append_dbc_rows(blob, rows, string_fields, source):
+def append_dbc_rows(blob, rows, string_fields, source, overrides=None):
     """Append rows to a DBC without parsing the ones already in it.
 
     Spell.dbc is ~49 MB and reading its 49840 records into Python lists costs
@@ -185,7 +185,10 @@ def append_dbc_rows(blob, rows, string_fields, source):
 
     `rows` are field lists taken from `source`; their string offsets point into
     *its* string block, so each one is re-read from there and re-added here.
+    `overrides` maps a row id to {field index: replacement text}, for strings that
+    should not come from the source at all.
     """
+    overrides = overrides or {}
     _, rc, fc, rs, sb = struct.unpack_from("<4sIIII", blob, 0)
     records = bytearray(blob[20:20 + rc * rs])
     strings = bytearray(blob[20 + rc * rs:20 + rc * rs + sb])
@@ -199,8 +202,10 @@ def append_dbc_rows(blob, rows, string_fields, source):
 
     for row in rows:
         out = list(row)
+        replacements = overrides.get(row[0], {})
         for i in string_fields:
-            out[i] = addstr(read_dbc_string(source, row[i]))
+            text = replacements.get(i)
+            out[i] = addstr(text if text is not None else read_dbc_string(source, row[i]))
         records.extend(struct.pack(f"<{fc}I", *[v & 0xFFFFFFFF for v in out]))
 
     header = struct.pack("<4sIIII", b"WDBC", rc + len(rows), fc, rs, len(strings))
@@ -394,11 +399,13 @@ def main():
     from build_ascension_spells import select_spells
 
     print("selecting spells ...")
-    spells, asc_spell_dbc = select_spells(quiet=True)
+    spells, asc_spell_dbc, spell_strings = select_spells(quiet=True)
 
     spell_blob, spell_from = current_client_dbc("Spell.dbc")
+    # spell_strings carries the rewritten descriptions for the PvE/PvP Power
+    # spells, so the tooltip says what the aura now actually does.
     patched_spells, before, after = append_dbc_rows(
-        spell_blob, list(spells.values()), SPELL_STRING_FIELDS, asc_spell_dbc)
+        spell_blob, list(spells.values()), SPELL_STRING_FIELDS, asc_spell_dbc, spell_strings)
     print(f"Spell.dbc (from {spell_from}): {before} -> {after} rows")
 
     # Their icons. Ascension's SpellIcon rows name .blp files, most of which this
