@@ -26,10 +26,11 @@ they would on Ascension.
 Archive letters
 ---------------
 WoW loads patch archives in letter order and later ones win, so this writes
-`patch-w.mpq` (after clientpatch's `patch-v.mpq`) and `patch-enus-z.mpq` (after
-its `patch-enus-y.mpq`). The DBC is built on top of whatever the client reads
-today, so clientpatch's own ItemDisplayInfo rows survive - but that also means
-**re-run this tool after running clientpatch's build_patches.py**, not before.
+`patch-y.mpq` and `patch-enus-z.mpq` - letters checked to be free in this client
+and later than clientpatch's own `patch-v` / `patch-enus-y`. The DBC is built on
+top of whatever the client reads today, so clientpatch's own ItemDisplayInfo rows
+survive - but that also means **run this tool after clientpatch's
+build_patches.py**, never before.
 """
 
 import argparse
@@ -52,11 +53,14 @@ from mpq import MPQ, build, hash_str     # noqa: E402
 
 OUT = Path(__file__).resolve().parent / "out"
 
-# Only this tool's own locale archive is ignored when looking for the DBC to
-# build on - clientpatch's patch-enus-y must be picked up, or its pet item rows
-# would be dropped.
+# Both letters were checked against this client rather than assumed free: patch-w
+# and patch-x are already taken (patch-w by 27 MB of other content), and
+# clientpatch owns patch-v and patch-enus-y. Later letters win, which is what puts
+# these rows on top of everything else. Only this tool's *own* locale archive is
+# skipped when looking for the DBC to build on, so clientpatch's patch-enus-y is
+# picked up and its pet item rows survive.
 MY_LOCALE_ARCHIVE = "patch-enus-z.mpq"
-MY_DATA_ARCHIVE = "patch-w.mpq"
+MY_DATA_ARCHIVE = "patch-y.mpq"
 
 # ItemDisplayInfo.dbc field indices that hold string-block offsets.
 STRING_FIELDS = [1, 2, 3, 4, 5, 6] + list(range(15, 23))
@@ -70,6 +74,26 @@ WORLDFORGED_TAG = "@Worldforged@"
 _LETTER_ORDER = "23456789abcdefghijklmnopqrstuvwxyz"
 
 
+def _memoize_tables(archive):
+    """Decrypt each MPQ's hash and block tables once instead of once per lookup.
+
+    mpq.MPQ.read_file() re-reads and decrypts both tables on every call. That is
+    fine for the handful of files clientpatch pulls, but here it means hundreds
+    of lookups across dozens of multi-gigabyte archives, and pure-Python decrypt
+    of an 8 MB table is not cheap. Caching them turns most of an hour into
+    seconds, and touches nothing else about how the archive is read.
+    """
+    original = archive._table
+    cache = {}
+
+    def cached(off, n, key, esz):
+        if key not in cache:
+            cache[key] = original(off, n, key, esz)
+        return cache[key]
+
+    archive._table = cached
+
+
 class ArchiveIndex:
     """Presence checks that do not re-decrypt the tables on every lookup."""
 
@@ -77,12 +101,13 @@ class ArchiveIndex:
         self.path = Path(path)
         self.name = self.path.name
         self.mpq = MPQ(str(path))
+        _memoize_tables(self.mpq)
+
         table = self.mpq._table(self.mpq.htbl_off, self.mpq.htbl_n, "(hash table)", 16)
         self.keys = set()
         for i in range(self.mpq.htbl_n):
-            _, _, _, block = struct.unpack_from("<IIIi", table, i * 16)
+            h1, h2, _, block = struct.unpack_from("<IIIi", table, i * 16)
             if block >= 0:
-                h1, h2, _, _ = struct.unpack_from("<IIIi", table, i * 16)
                 self.keys.add((h1, h2))
 
     def has(self, name):
