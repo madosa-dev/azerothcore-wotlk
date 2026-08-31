@@ -317,6 +317,39 @@ Madosa.Worldforged.RareChance = 15
 #
 Madosa.Worldforged.GoldPerLevel = 500
 
+# Madosa.Worldforged.Ascension.Enable
+#
+#        Description: Ascension's own Worldforged, reproduced: 3608 fixed spots across
+#                     the world, each holding the specific item Ascension players
+#                     recorded finding there. A separate system from the timed event
+#                     above - nothing is announced and nothing moves; a spot always
+#                     holds what it holds, and finding it means going there.
+#
+#                     Caches are streamed in around real players rather than all
+#                     spawned at once, because 3608 permanent objects would keep 3608
+#                     map grids resident for the rest of the uptime. You cannot tell
+#                     the difference: a cache is always there when you arrive.
+#
+#                     Only real players stream caches in and only real players can
+#                     open one, or the realm's playerbots would empty the world of
+#                     Worldforged items before a person walked past one.
+#
+#        Default:     1 - Enabled
+#                     0 - Disabled
+#
+Madosa.Worldforged.Ascension.Enable = 1
+
+# Madosa.Worldforged.Ascension.RespawnMinutes
+#
+#        Description: How long a looted Ascension spot stays empty before it holds its
+#                     item again. Ascension's own Worldforged do come back, so this is
+#                     a respawn timer rather than a one-time find; set it high if you
+#                     would rather work through all 3608 spots than farm a few.
+#
+#        Default:     120
+#
+Madosa.Worldforged.Ascension.RespawnMinutes = 120
+
 # Madosa.Addon.Enable
 #
 #        Description: Lets the MadosaControl client addon read and change the

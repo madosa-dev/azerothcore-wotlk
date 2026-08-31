@@ -35,6 +35,7 @@ void AddSC_madosa_profession_slots();
 void AddSC_madosa_passerby_buff();
 void AddSC_madosa_service_pets();
 void AddSC_madosa_worldforged();
+void AddSC_madosa_worldforged_ascension();
 
 // Add all
 void Addmod_madosaScripts()
@@ -52,4 +53,5 @@ void Addmod_madosaScripts()
     AddSC_madosa_passerby_buff();
     AddSC_madosa_service_pets();
     AddSC_madosa_worldforged();
+    AddSC_madosa_worldforged_ascension();
 }

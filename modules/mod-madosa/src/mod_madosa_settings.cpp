@@ -66,6 +66,8 @@ namespace
     std::atomic<uint32> worldforgedMaxActive{1};
     std::atomic<uint32> worldforgedRareChance{15};
     std::atomic<uint32> worldforgedGoldPerLevel{500};
+    std::atomic<bool> worldforgedAscensionEnable{true};
+    std::atomic<uint32> worldforgedAscensionRespawn{120};
 
     // Every feature toggle behaves identically, so they share one table instead
     // of repeating the same parse/validate/store block per key. Madosa.Addon.Enable
@@ -100,6 +102,7 @@ namespace
         { "omnipet.enable",           "Madosa.OmniPet.Enable",             &omniPetEnable,           true },
         { "worldforged.enable",       "Madosa.Worldforged.Enable",         &worldforgedEnable,       true },
         { "worldforged.announce",     "Madosa.Worldforged.Announce",       &worldforgedAnnounce,     true },
+        { "worldforged.ascension.enable", "Madosa.Worldforged.Ascension.Enable", &worldforgedAscensionEnable, true },
     };
 
     // The numeric settings share the same shape too - a slot, a config key, a
@@ -127,6 +130,9 @@ namespace
         { "worldforged.maxactive",    "Madosa.Worldforged.MaxActive",       &worldforgedMaxActive,     1,  1,     10 },
         { "worldforged.rarechance",   "Madosa.Worldforged.RareChance",      &worldforgedRareChance,   15,  0,    100 },
         { "worldforged.goldperlevel", "Madosa.Worldforged.GoldPerLevel",    &worldforgedGoldPerLevel, 500, 0, 100000 },
+        // A looted Ascension spot stays empty this long. Minutes, up to a week.
+        { "worldforged.ascension.respawn", "Madosa.Worldforged.Ascension.RespawnMinutes",
+          &worldforgedAscensionRespawn, 120, 1, 10080 },
     };
 
     UIntSetting const* FindUIntSetting(std::string const& key)
@@ -293,6 +299,8 @@ namespace MadosaSettings
     uint32 GetWorldforgedMaxActive() { return std::max<uint32>(1, worldforgedMaxActive.load()); }
     uint32 GetWorldforgedRareChance() { return std::min<uint32>(100, worldforgedRareChance.load()); }
     uint32 GetWorldforgedGoldPerLevel() { return worldforgedGoldPerLevel.load(); }
+    bool GetWorldforgedAscensionEnable() { return worldforgedAscensionEnable.load(); }
+    uint32 GetWorldforgedAscensionRespawn() { return std::max<uint32>(1, worldforgedAscensionRespawn.load()); }
 
     void Init()
     {

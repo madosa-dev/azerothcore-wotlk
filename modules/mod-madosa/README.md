@@ -211,6 +211,62 @@ are substantial enough to stand on their own).
 
   GM commands: `.madosa worldforged status` / `spawn` / `clear`.
 
+- **`worldforged_ascension_items.sql` + `worldforged_ascension_spawns.sql` +
+  `src/mod_madosa_worldforged_ascension.cpp`**: **Ascension's Worldforged, for
+  real.** Not an homage this time - the actual items, with Ascension's own names,
+  qualities, item levels, slots, armour, damage and stats, standing at the actual
+  3608 places Ascension players found them. A separate system from the timed
+  event above: nothing is announced and nothing moves; a spot always holds what
+  it holds.
+
+  Where the data comes from, since both Ascension item databases are gone
+  (`db.ascension.gg` no longer resolves, `db.exil.es` does not answer, and the
+  Wayback captures are empty SPA shells):
+  - **The items** come out of the Ascension *client's own cache*
+    (`Cache/WDB/.../itemcache.wdb`), which stores the raw
+    `SMSG_ITEM_QUERY_SINGLE_RESPONSE` the server sent for every item the client
+    was ever shown. Ascension left that packet at the stock 3.3.5a layout, so it
+    parses exactly - and the parser proves it by checking that every one of the
+    17391 records is consumed to precisely its declared length. Worldforged items
+    identify themselves: Ascension tags each one `@Worldforged@` in the
+    description. 2615 of them.
+  - **The locations** come from the `LootCollector` addon's community starter
+    database, decoded back through its
+    `!LC1!` + LibDeflate + AceSerializer pipeline, then converted from zone
+    percentages to world coordinates exactly as the core's own
+    `Zone2MapCoordinates()` does it. That conversion is checked rather than
+    trusted: the median converted point lands **16 yards** from the nearest
+    creature spawn in this world database, 87% within 50. 351 finds are dropped -
+    caves, mines and starting sub-zones have no `WorldMapArea` row to convert
+    against.
+
+  Two things deliberately do not come across, because a dangling reference is
+  worse than an absent one: the **item effects** (586 distinct Ascension spells -
+  recreating them would be a project the size of everything else here) and
+  `ItemLimitCategory` above 85, the highest WotLK ships.
+
+  **Streamed, not spawned.** 3608 permanent objects would mean 3608 map grids
+  resident for the rest of the uptime, since this core never unloads one. So a
+  scan spawns the caches near a real player and drops them again once nobody is
+  close. You cannot tell the difference - a cache is always there when you get
+  there - but only a handful exist at a time, in grids a player is standing in
+  anyway. It also solves ground height for free: the spawn table carries no Z,
+  and `Map::GetHeight()` answers exactly once the grid is loaded. Only real
+  players stream caches in and only real players can open one, for the same
+  reason as everywhere else in this module.
+
+  **`tools/worldforged/build_item_patch.py`** supplies the look. The item *data*
+  needs no client patch at all - in 3.3.5a the client asks the server for item
+  templates - but the appearance is client-side. 914 of the 1415 displays already
+  exist in this client; the patch adds the other 501 plus the 192 icon files they
+  name that WotLK never shipped (Ascension imported them from later expansions,
+  or drew their own). 66 rows name a 3D model this client lacks, affecting 116 of
+  2615 items; those keep their correct Ascension icon and borrow the model of a
+  WotLK item of the same class and slot, so nothing renders broken. It writes
+  `patch-w.mpq` and `patch-enus-z.mpq`, deliberately after `clientpatch`'s own
+  `patch-v` / `patch-enus-y`, and builds its DBC on top of whatever the client
+  reads today - so **run it after `clientpatch/build_patches.py`, never before**.
+
 ## Live-tunable settings (`MadosaSettings`)
 
 Every knob a GM might want to tweak while the server is running is **not**
@@ -242,6 +298,8 @@ read straight from the config file:
 | `worldforged.maxactive` | `Madosa.Worldforged.MaxActive` | number, 1-10 |
 | `worldforged.rarechance` | `Madosa.Worldforged.RareChance` | number, 0-100 |
 | `worldforged.goldperlevel` | `Madosa.Worldforged.GoldPerLevel` | number, 0-100000 |
+| `worldforged.ascension.enable` | `Madosa.Worldforged.Ascension.Enable` | on/off |
+| `worldforged.ascension.respawn` | `Madosa.Worldforged.Ascension.RespawnMinutes` | number, 1-10080 |
 | `passerbybuff.paladin.might.enable` | `Madosa.PasserbyBuff.Paladin.Might.Enable` | on/off |
 
 `Madosa.Addon.Enable` is deliberately absent: it gates the bridge MadosaControl

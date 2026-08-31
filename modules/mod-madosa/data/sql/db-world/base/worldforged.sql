@@ -72,3 +72,65 @@ CREATE TABLE IF NOT EXISTS `mod_madosa_worldforged_spawns` (
   `comment` VARCHAR(255) NOT NULL DEFAULT '',
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='mod-madosa: Worldforged Cache spawn points';
+
+-- ---------------------------------------------------------------------------
+-- Ascension's own Worldforged: the real items, at the real places
+-- ---------------------------------------------------------------------------
+
+-- A second, separate system from the timed event above. Where that one forges a
+-- randomly enchanted item somewhere, this reproduces Ascension's Worldforged as
+-- it actually is: 3608 fixed spots across the world, each holding the specific
+-- item Ascension players recorded finding there.
+--
+-- Both the items (worldforged_ascension_items.sql) and the locations
+-- (worldforged_ascension_spawns.sql) are generated - see the tools under
+-- tools/worldforged/ for where the data comes from and how it is verified.
+
+-- The cache object. A GOOBER for the same reason as 900400 above: a chest is
+-- looted through a path with no script hook, and the script has to decide who
+-- may open it. displayId 2450 is the ornate treasure box carried by "Amani
+-- Treasure Box" and "Ancient Drakkari Chest" - deliberately not 1387, so an
+-- Ascension find is recognisably a different thing from the timed event's cache,
+-- and picked from displays this database demonstrably spawns rather than from an
+-- id that merely looks plausible.
+DELETE FROM `gameobject_template` WHERE `entry` = 900401;
+INSERT INTO `gameobject_template`
+  (`entry`,`type`,`displayId`,`name`,`IconName`,`castBarCaption`,`unk1`,`size`,
+   `Data0`,`Data1`,`Data2`,`Data3`,`Data4`,`Data5`,`Data6`,`Data7`,`Data8`,`Data9`,`Data10`,`Data11`,
+   `Data12`,`Data13`,`Data14`,`Data15`,`Data16`,`Data17`,`Data18`,`Data19`,`Data20`,`Data21`,`Data22`,`Data23`,
+   `AIName`,`ScriptName`) VALUES
+(900401,10,2450,'Worldforged','LootAll','','',1,
+ 0,0,0,0,0,0,0,0,0,0,0,0,
+ 0,1,0,0,1,1,1,0,0,0,0,0,
+ '','go_madosa_worldforged_ascension');
+
+-- Where Ascension's Worldforged items are found. No position_z: ground height
+-- needs the server's map data, so it is resolved with Map::GetHeight() the
+-- moment a cache is streamed in near a player.
+CREATE TABLE IF NOT EXISTS `mod_madosa_worldforged_ascension_spawns` (
+  `id` INT UNSIGNED NOT NULL,
+  `map` SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+  `position_x` FLOAT NOT NULL DEFAULT 0,
+  `position_y` FLOAT NOT NULL DEFAULT 0,
+  `item` INT UNSIGNED NOT NULL DEFAULT 0,
+  `zone` VARCHAR(64) NOT NULL DEFAULT '',
+  PRIMARY KEY (`id`),
+  KEY `idx_map` (`map`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='mod-madosa: Ascension Worldforged find locations';
+
+-- Which item_template rows this module owns, so regenerating the item file can
+-- clean up after the previous run without touching anything else.
+CREATE TABLE IF NOT EXISTS `mod_madosa_worldforged_ascension_items` (
+  `item` INT UNSIGNED NOT NULL,
+  PRIMARY KEY (`item`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='mod-madosa: item_template rows owned by the Ascension Worldforged import';
+
+-- When each looted spot becomes available again. Only looted spots appear here;
+-- an absent row means "ready". Kept in the characters DB rather than the world
+-- DB would be more orthodox, but this is world state, not character state, and
+-- keeping it beside the spawn table means one less database to reason about.
+CREATE TABLE IF NOT EXISTS `mod_madosa_worldforged_ascension_cooldowns` (
+  `id` INT UNSIGNED NOT NULL,
+  `available_at` BIGINT NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='mod-madosa: per-spot respawn timers for Ascension Worldforged';
