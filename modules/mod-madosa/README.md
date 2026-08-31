@@ -371,6 +371,13 @@ are substantial enough to stand on their own).
     renamed once the hash matches, or an interrupted download would look complete
     on the next start and break the client.
 
+  `build_exe.sh` turns it into `MadosaLauncher.exe`, so a player needs nothing
+  installed at all. PyInstaller cannot cross-compile - a Windows executable has
+  to be built by a Windows Python - so the script puts one in its own Wine prefix
+  under `~/.cache/madosa-launcher-build` and builds there. Deliberately not
+  `~/.wine`: a build tool has no business installing into the prefix the games
+  use, and deleting that one directory undoes everything the script did.
+
   It is standard library only, and the window is optional: tkinter ships with
   Python on Windows but is a separate package on many Linux distributions, so
   without it the launcher runs the same routine on the terminal rather than

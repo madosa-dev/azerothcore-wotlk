@@ -1,3 +1,6 @@
 public/
 madosa_launcher.json
 __pycache__/
+build/
+dist/
+*.spec
