@@ -245,6 +245,16 @@ are substantial enough to stand on their own).
   recreating them would be a project the size of everything else here) and
   `ItemLimitCategory` above 85, the highest WotLK ships.
 
+  **One find per item, per character.** A character may claim each distinct
+  Worldforged item once, tracked in `character_worldforged_ascension_loot`. That
+  table is keyed by *item*, not by spot, because the 1509 items are spread over
+  3599 places - claiming a Silverbound Dagger at one of them finishes every other
+  spot holding one, instead of letting you farm duplicates a few hills apart. The
+  streaming scan knows about it, so a cache you have finished simply stops
+  appearing rather than standing there to refuse you, and the world visibly
+  empties out as your collection fills up. The per-spot respawn timer stays
+  underneath: it is what lets an alt find the spot again later.
+
   **Streamed, not spawned.** 3608 permanent objects would mean 3608 map grids
   resident for the rest of the uptime, since this core never unloads one. So a
   scan spawns the caches near a real player and drops them again once nobody is

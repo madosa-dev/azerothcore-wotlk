@@ -42,9 +42,24 @@
 // Only real players stream caches in, and only real players may open one. On a
 // realm with ~3000 playerbots the alternative is that bots empty the world of
 // Worldforged items before a person ever walks past one.
+//
+// One find per item, per character
+// --------------------------------
+// A character may claim each distinct Worldforged item once, tracked in
+// character_worldforged_ascension_loot. Keyed by item rather than by spot,
+// because the 1509 items are spread over 3599 places: claiming a Silverbound
+// Dagger at one of them finishes every other spot holding one, instead of
+// letting you farm duplicates a few hills apart.
+//
+// The streaming scan knows about this, so a cache a character has finished
+// simply stops appearing for them rather than standing there to refuse them -
+// which also means the world visibly empties out as a collection fills up. The
+// per-spot respawn timer stays underneath it all the same: it is what lets a
+// second character, or an alt, find the spot again later.
 
 #include "mod_madosa_settings.h"
 
+#include "CharacterDatabase.h"
 #include "Chat.h"
 #include "GameObject.h"
 #include "GameTime.h"
@@ -61,6 +76,7 @@
 #include <mutex>
 #include <shared_mutex>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace
@@ -96,6 +112,12 @@ namespace
     std::unordered_map<uint32, ObjectGuid> liveCaches;      // spawn point id -> object
     std::unordered_map<ObjectGuid, uint32> cacheOwners;     // object -> spawn point id
     std::unordered_map<uint32, time_t> cooldowns;           // spawn point id -> available again at
+
+    // What each online character has already claimed, keyed by item rather than
+    // by spot: several places hold the same item, and one claim finishes all of
+    // them for that character. Loaded on login, dropped on logout, so this only
+    // ever holds rows for players who are actually here.
+    std::unordered_map<ObjectGuid::LowType, std::unordered_set<uint32>> claimedItems;
 
     void LoadSpawnPoints()
     {
@@ -161,6 +183,7 @@ namespace
     // keep them alive.
     struct Watcher
     {
+        ObjectGuid::LowType guid;
         uint32 map;
         float x;
         float y;
@@ -172,12 +195,25 @@ namespace
         std::shared_lock<std::shared_mutex> lock(*HashMapHolder<Player>::GetLock());
         for (auto const& [guid, player] : ObjectAccessor::GetPlayers())
             if (player->IsInWorld() && !GET_PLAYERBOT_AI(player))
-                out.push_back({ player->GetMapId(), player->GetPositionX(), player->GetPositionY() });
+                out.push_back({ player->GetGUID().GetCounter(), player->GetMapId(),
+                    player->GetPositionX(), player->GetPositionY() });
 
         return out;
     }
 
-    bool WithinRange(SpawnPoint const& point, std::vector<Watcher> const& watchers, float range)
+    // Has this character already claimed this item? Callers hold stateMutex.
+    bool AlreadyClaimed(ObjectGuid::LowType guid, uint32 item)
+    {
+        auto claimed = claimedItems.find(guid);
+        return claimed != claimedItems.end() && claimed->second.count(item);
+    }
+
+    // A cache is only worth existing for someone who can still take what is in
+    // it, so "in range" means "in range of a player who has not claimed this item
+    // yet". That is what makes the world visibly empty out as a character
+    // collects, instead of leaving chests standing that would only refuse them.
+    // Callers hold stateMutex.
+    bool NeededNearby(SpawnPoint const& point, std::vector<Watcher> const& watchers, float range)
     {
         float rangeSq = range * range;
         for (Watcher const& w : watchers)
@@ -187,7 +223,10 @@ namespace
 
             float dx = w.x - point.x;
             float dy = w.y - point.y;
-            if (dx * dx + dy * dy <= rangeSq)
+            if (dx * dx + dy * dy > rangeSq)
+                continue;
+
+            if (!AlreadyClaimed(w.guid, point.item))
                 return true;
         }
         return false;
@@ -260,8 +299,10 @@ namespace
                 auto live = liveCaches.find(point.id);
                 if (live != liveCaches.end())
                 {
-                    // Standing: keep it until everyone has walked well away.
-                    if (!WithinRange(point, watchers, STREAM_OUT_RANGE))
+                    // Standing: keep it until nobody near it still wants it -
+                    // everyone walked well away, or the one person here just
+                    // claimed this item.
+                    if (!NeededNearby(point, watchers, STREAM_OUT_RANGE))
                     {
                         toDespawn.push_back({ point.map, live->second });
                         cacheOwners.erase(live->second);
@@ -279,7 +320,7 @@ namespace
                         point.id);
                 }
 
-                if (WithinRange(point, watchers, STREAM_IN_RANGE))
+                if (NeededNearby(point, watchers, STREAM_IN_RANGE))
                     toSpawn.push_back(&point);
             }
         }
@@ -289,6 +330,40 @@ namespace
 
         for (SpawnPoint const* point : toSpawn)
             SpawnCache(*point);
+    }
+
+    void LoadClaimedItems(ObjectGuid::LowType guid)
+    {
+        std::unordered_set<uint32> claimed;
+
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT item FROM character_worldforged_ascension_loot WHERE guid = {}", guid);
+        if (result)
+            do
+            {
+                claimed.insert(result->Fetch()[0].Get<uint32>());
+            } while (result->NextRow());
+
+        std::lock_guard<std::mutex> lock(stateMutex);
+        claimedItems[guid] = std::move(claimed);
+    }
+
+    void ForgetClaimedItems(ObjectGuid::LowType guid)
+    {
+        std::lock_guard<std::mutex> lock(stateMutex);
+        claimedItems.erase(guid);
+    }
+
+    void RecordClaim(ObjectGuid::LowType guid, uint32 item)
+    {
+        {
+            std::lock_guard<std::mutex> lock(stateMutex);
+            claimedItems[guid].insert(item);
+        }
+
+        CharacterDatabase.Execute(
+            "REPLACE INTO character_worldforged_ascension_loot (guid, item, looted_at) VALUES ({}, {}, {})",
+            guid, item, static_cast<int64>(GameTime::GetGameTime().count()));
     }
 
     void PutOnCooldown(uint32 pointId)
@@ -335,6 +410,25 @@ public:
     }
 };
 
+// The claimed-item sets are kept only for players who are actually online, since
+// that is the only time the streaming scan needs to ask about them.
+class mod_madosa_worldforged_ascension_player : public PlayerScript
+{
+public:
+    mod_madosa_worldforged_ascension_player() : PlayerScript("mod_madosa_worldforged_ascension_player") { }
+
+    void OnPlayerLogin(Player* player) override
+    {
+        if (!GET_PLAYERBOT_AI(player))
+            LoadClaimedItems(player->GetGUID().GetCounter());
+    }
+
+    void OnPlayerLogout(Player* player) override
+    {
+        ForgetClaimedItems(player->GetGUID().GetCounter());
+    }
+};
+
 class go_madosa_worldforged_ascension : public GameObjectScript
 {
 public:
@@ -346,6 +440,8 @@ public:
     {
         if (GET_PLAYERBOT_AI(player))
             return true; // bots get nothing, and have nobody to tell
+
+        ObjectGuid::LowType playerGuid = player->GetGUID().GetCounter();
 
         uint32 pointId = 0;
         uint32 item = 0;
@@ -362,6 +458,17 @@ public:
                     item = point.item;
                     break;
                 }
+
+            // Each Worldforged item is one find per character. The streaming scan
+            // will not normally show a character a cache they have finished, so
+            // reaching here means someone else's cache, or a click that beat the
+            // next scan - either way, say so plainly rather than silently.
+            if (item && AlreadyClaimed(playerGuid, item))
+            {
+                ChatHandler(player->GetSession()).PSendSysMessage(
+                    "You have already claimed this Worldforged find.");
+                return true;
+            }
         }
 
         if (!item)
@@ -383,6 +490,7 @@ public:
             return true;
 
         player->SendNewItem(created, 1, true, false);
+        RecordClaim(playerGuid, item);
 
         // Claim the spot before removing the object, so a second click in the same
         // tick finds nothing to claim.
@@ -401,5 +509,6 @@ public:
 void AddSC_madosa_worldforged_ascension()
 {
     new mod_madosa_worldforged_ascension_world();
+    new mod_madosa_worldforged_ascension_player();
     new go_madosa_worldforged_ascension();
 }
