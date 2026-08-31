@@ -24,10 +24,9 @@ Worldforged items identify themselves: Ascension tags every one of them with
 
 What cannot come across
 -----------------------
-* **The item effects.** Worldforged items carry 586 distinct Ascension spells
-  ("a ring that instils fear", "a shield that retaliates with nature damage").
-  None exist in WotLK's Spell.dbc, and inventing them would be a project of its
-  own, so every spell slot is cleared. Names, stats and slots stay exact.
+The item *effects* do come across - see build_ascension_spells.py, which imports
+the spells themselves into spell_dbc. This file only wires the items to them.
+
 * **item_limit_category.** Ascension references categories from 1671 up; WotLK's
   ItemLimitCategory.dbc stops at 85, so those are cleared too.
 
@@ -150,7 +149,12 @@ COLUMNS = (
     "ScalingStatDistribution,ScalingStatValue,"
     "dmg_min1,dmg_max1,dmg_type1,dmg_min2,dmg_max2,dmg_type2,"
     "armor,holy_res,fire_res,nature_res,frost_res,shadow_res,arcane_res,"
-    "delay,ammo_type,RangedModRange,bonding,description,PageText,LanguageID,PageMaterial,"
+    "delay,ammo_type,RangedModRange,"
+    + ",".join(
+        f"spellid_{i},spelltrigger_{i},spellcharges_{i},spellppmRate_{i},"
+        f"spellcooldown_{i},spellcategory_{i},spellcategorycooldown_{i}"
+        for i in range(1, 6)) + ","
+    "bonding,description,PageText,LanguageID,PageMaterial,"
     "startquest,lockid,Material,sheath,RandomProperty,RandomSuffix,block,itemset,MaxDurability,"
     "area,Map,BagFamily,TotemCategory,"
     "socketColor_1,socketContent_1,socketColor_2,socketContent_2,socketColor_3,socketContent_3,"
@@ -164,6 +168,13 @@ def row(it):
     stat_fields = []
     for i in range(MAX_STATS):
         stat_fields += list(stats[i]) if i < len(stats) else [0, 0]
+
+    # The item query carries six values per spell slot; item_template has a
+    # seventh, spellppmRate, which is server-side only and never sent - so it
+    # stays 0 rather than being invented.
+    spell_fields = []
+    for spell_id, trigger, charges, cooldown, category, category_cooldown in it["spells"]:
+        spell_fields += [spell_id, trigger, charges, 0, cooldown, category, category_cooldown]
 
     dmg = it["damage"]
     limit_category = it["item_limit_category"] if it["item_limit_category"] <= MAX_ITEM_LIMIT_CATEGORY else 0
@@ -184,6 +195,7 @@ def row(it):
         f"{dmg[1][0]:g}", f"{dmg[1][1]:g}", dmg[1][2],
         it["armor"], *it["resistances"],
         it["delay"], it["ammo_type"], f"{it['ranged_mod_range']:g}",
+        *spell_fields,
         it["bonding"],
         "''",                                # description - drops the @Worldforged@ tag
         it["page_text"], it["language_id"], it["page_material"],
@@ -214,8 +226,7 @@ def build_sql(items):
         "--\n"
         "-- Two things are deliberately cleared, because the data they point at does not\n"
         "-- exist in WotLK and a dangling reference is worse than an absent one:\n"
-        "--   * every item spell (586 distinct Ascension spells - the Worldforged\n"
-        "--     'unique effects'), plus requiredspell and startquest\n"
+        "--   * requiredspell and startquest, which name Ascension spells and quests\n"
         "--   * ItemLimitCategory above 85, the highest WotLK ships\n"
         "--\n"
         f"-- {len(items)} items.\n"
@@ -273,10 +284,11 @@ def main():
     else:
         sys.stdout.write(sql)
 
-    dropped = sum(1 for i in items if any(s[0] > 0 for s in i["spells"]))
+    with_effects = sum(1 for i in items if any(s[0] > 0 for s in i["spells"]))
     print(f"{len(items)} Worldforged items of {len(everything)} cached "
           f"({untagged} untagged but sitting at a recorded find); "
-          f"cleared spells on {dropped}", file=sys.stderr)
+          f"{with_effects} carry an effect - run build_ascension_spells.py so those exist",
+          file=sys.stderr)
 
 
 if __name__ == "__main__":

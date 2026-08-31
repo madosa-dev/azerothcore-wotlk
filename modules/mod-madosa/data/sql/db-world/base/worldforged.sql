@@ -125,6 +125,14 @@ CREATE TABLE IF NOT EXISTS `mod_madosa_worldforged_ascension_items` (
   PRIMARY KEY (`item`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='mod-madosa: item_template rows owned by the Ascension Worldforged import';
 
+-- The same idea for spell_dbc: the Worldforged item effects and everything they
+-- cast in turn. That table already holds this core's own custom spells, so the
+-- import has to be able to remove exactly its own rows and nothing else.
+CREATE TABLE IF NOT EXISTS `mod_madosa_worldforged_ascension_spells` (
+  `spell` INT UNSIGNED NOT NULL,
+  PRIMARY KEY (`spell`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='mod-madosa: spell_dbc rows owned by the Ascension Worldforged import';
+
 -- When each looted spot becomes available again. Only looted spots appear here;
 -- an absent row means "ready". Kept in the characters DB rather than the world
 -- DB would be more orthodox, but this is world state, not character state, and
