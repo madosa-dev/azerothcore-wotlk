@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Launcher for the realm: checks for client patches, fetches them, starts WoW.
 
+A Windows program - which on Linux means running it through Wine, in the same
+prefix as the game, so that starting Wow.exe from it works the way it always
+does.
+
     python3 madosa_launcher.py              # window if one can be opened, else text
     python3 madosa_launcher.py --cli        # text, always
     python3 madosa_launcher.py --check      # update only, do not start the game
@@ -14,10 +18,11 @@ Why a launcher at all: the 3.3.5a client has no patch download of its own and
 the game protocol cannot carry files, so patches have to arrive before the game
 starts. That is what Ascension's launcher does too.
 
-Standard library only. The window uses tkinter, which ships with Python on
-Windows and macOS but is a separate package on many Linux distributions
-(`python3-tk`) - so the launcher falls back to the same routine on the terminal
-rather than refusing to run. Nothing is lost but the progress bar.
+Standard library only, so a frozen build needs nothing bundled beyond Python
+itself. The window uses tkinter, which ships with Python on Windows; if it
+cannot be opened at all the launcher runs the same routine on the terminal
+rather than refusing to start, which is also how it stays testable on a Linux
+box without `python3-tk`.
 
 Where the game folder is spelled differently
 --------------------------------------------
@@ -32,7 +37,6 @@ import argparse
 import hashlib
 import json
 import os
-import platform
 import subprocess
 import sys
 import urllib.error
@@ -112,16 +116,16 @@ def sha256(path):
 def launch_command(config, executable):
     """How to start the game.
 
-    A configured `launch_command` wins, so a Wine or Proton setup can say exactly
-    what it needs; `{exe}` in it is replaced with the executable's path. Without
-    one, Windows runs it directly and everything else tries wine.
+    This is a Windows program, so the normal answer is "run Wow.exe" - including
+    under Wine, where the launcher and the game share a prefix and Wine starts it
+    the same way it started the launcher. A configured `launch_command` overrides
+    that for anyone who needs something else; `{exe}` in it stands for the
+    executable's path.
     """
     if configured := config.get("launch_command"):
         return [str(executable) if part == "{exe}" else part for part in configured]
 
-    if platform.system() == "Windows":
-        return [str(executable)]
-    return ["wine", str(executable)]
+    return [str(executable)]
 
 
 # --------------------------------------------------------------------------
