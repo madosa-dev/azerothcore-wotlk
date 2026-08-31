@@ -26,8 +26,10 @@ they would on Ascension.
 Archive letters
 ---------------
 WoW loads patch archives in letter order and later ones win, so this writes
-`patch-y.mpq` and `patch-enus-z.mpq` - letters checked to be free in this client
-and later than clientpatch's own `patch-v` / `patch-enus-y`. The DBC is built on
+one file, `patch-enus-z.mpq` - a letter checked to be free in this client and
+later than clientpatch's own `patch-enus-y`. The icons ride along in it rather
+than in a second data/ archive: MPQ lookups are by path across the whole chain
+and the base game already serves Interface\Icons out of locale-enUS.mpq. The DBC is built on
 top of whatever the client reads today, so clientpatch's own ItemDisplayInfo rows
 survive - but that also means **run this tool after clientpatch's
 build_patches.py**, never before.
@@ -448,19 +450,26 @@ def main():
     if not_found:
         print(f"  WARNING: {len(not_found)} icons not readable from Ascension either: {not_found[:8]}")
 
-    size, _ = build(str(OUT / MY_DATA_ARCHIVE), files)
-    print(f"{MY_DATA_ARCHIVE}       {size / 1024 / 1024:6.2f} MB  ({len(files)} icons)")
-
+    # Everything in one archive, icons included. MPQ lookups are by path across
+    # the whole chain and locale archives take part in it - the base game already
+    # serves Interface\Icons from locale-enUS.mpq - so a locale archive can carry
+    # them just as well, and that leaves a single file to hand anyone.
     dbcs = [("DBFilesClient\\ItemDisplayInfo.dbc", dbc_out.read_bytes()),
             ("DBFilesClient\\Item.dbc", patched_items),
             ("DBFilesClient\\Spell.dbc", patched_spells),
             ("DBFilesClient\\SpellIcon.dbc", patched_icons)]
-    size, _ = build(str(OUT / MY_LOCALE_ARCHIVE), dbcs)
-    print(f"{MY_LOCALE_ARCHIVE}  {size / 1024 / 1024:6.2f} MB  ({len(dbcs)} DBCs)")
+    size, _ = build(str(OUT / MY_LOCALE_ARCHIVE), dbcs + files)
+    print(f"{MY_LOCALE_ARCHIVE}  {size / 1024 / 1024:6.2f} MB  "
+          f"({len(dbcs)} DBCs + {len(files)} icons)")
 
     if args.install:
-        shutil.copy(OUT / MY_DATA_ARCHIVE, CLIENT / "data" / MY_DATA_ARCHIVE)
         shutil.copy(OUT / MY_LOCALE_ARCHIVE, LOCALE_DIR / MY_LOCALE_ARCHIVE)
+        # An earlier layout split the icons into their own data/ archive; drop it
+        # so a client updated from that version does not keep a stale copy.
+        stale = CLIENT / "data" / MY_DATA_ARCHIVE
+        if stale.exists():
+            stale.unlink()
+            print(f"removed the now-unused {MY_DATA_ARCHIVE}")
         print(f"installed into {CLIENT}")
     else:
         print(f"not installed - re-run with --install (output in {OUT})")

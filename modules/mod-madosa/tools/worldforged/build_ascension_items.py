@@ -122,6 +122,48 @@ def parse_item(entry, body):
     return it
 
 
+def disenchant_lookup():
+    """(class, subclass, quality) -> [(item level, DisenchantID)] from real items.
+
+    DisenchantID points at a disenchant_loot_template row, and an item with 0
+    there simply cannot be disenchanted - which is how these items shipped at
+    first, since the column was not in the INSERT at all. The id is not derivable
+    from anything on the item; WotLK assigns it per class, quality and item level
+    band, with weapons on one series of ids and armour on another. Rather than
+    reconstruct that table by hand, take it from what Blizzard's own items do and
+    match each import to its closest equivalent.
+    """
+    from build_ascension_spells import query
+
+    rows = query(
+        "SELECT class, subclass, Quality, ItemLevel, DisenchantID, COUNT(*) c "
+        "FROM item_template WHERE entry < 100000 AND DisenchantID > 0 "
+        "GROUP BY class, subclass, Quality, ItemLevel, DisenchantID "
+        "ORDER BY c DESC;")
+
+    lookup = {}
+    for cls, subclass, quality, item_level, disenchant_id, _ in rows:
+        key = (int(cls), int(subclass), int(quality))
+        # Ordered by frequency, so the first entry seen for an item level is the
+        # one Blizzard used most often for that shape of item.
+        lookup.setdefault(key, {}).setdefault(int(item_level), int(disenchant_id))
+    return lookup
+
+
+def disenchant_id(item, lookup):
+    """The DisenchantID a WotLK item of this shape and level would carry."""
+    if item["required_disenchant_skill"] < 0:
+        return 0        # Ascension says this one is not disenchantable
+
+    for key in ((item["class"], item["subclass"], item["quality"]),
+                (item["class"], 0, item["quality"])):
+        by_level = lookup.get(key)
+        if by_level:
+            nearest = min(by_level, key=lambda lvl: abs(lvl - item["item_level"]))
+            return by_level[nearest]
+    return 0
+
+
 def selected_items(cache_path=None):
     """The Worldforged items this module imports, in id order.
 
@@ -200,11 +242,11 @@ COLUMNS = (
     "area,Map,BagFamily,TotemCategory,"
     "socketColor_1,socketContent_1,socketColor_2,socketContent_2,socketColor_3,socketContent_3,"
     "socketBonus,GemProperties,RequiredDisenchantSkill,ArmorDamageModifier,duration,"
-    "ItemLimitCategory,HolidayId"
+    "ItemLimitCategory,HolidayId,DisenchantID"
 )
 
 
-def row(it, displays):
+def row(it, displays, disenchant):
     stats = it["stats"][:MAX_STATS]
     stat_fields = []
     for i in range(MAX_STATS):
@@ -249,11 +291,12 @@ def row(it, displays):
         *[x for pair in it["sockets"] for x in pair],
         it["socket_bonus"], it["gem_properties"], it["required_disenchant_skill"],
         f"{it['armor_damage_modifier']:g}", it["duration"], limit_category, it["holiday_id"],
+        disenchant_id(it, disenchant),
     ]
     return "(" + ",".join(str(x) for x in v) + ")"
 
 
-def build_sql(items, displays):
+def build_sql(items, displays, disenchant):
     head = (
         "-- Ascension's Worldforged items, as real item_template rows.\n"
         "--\n"
@@ -286,7 +329,7 @@ def build_sql(items, displays):
         "\n"
         f"INSERT INTO `item_template` ({COLUMNS}) VALUES\n"
     )
-    return head + ",\n".join(row(i, displays) for i in items) + ";\n"
+    return head + ",\n".join(row(i, displays, disenchant) for i in items) + ";\n"
 
 
 def main():
@@ -303,7 +346,8 @@ def main():
         raise SystemExit(f"no items tagged {WORLDFORGED_TAG} in {args.cache}")
 
     displays = display_map(items)
-    sql = build_sql(items, displays)
+    disenchant = disenchant_lookup()
+    sql = build_sql(items, displays, disenchant)
     if args.write:
         out = Path(__file__).resolve().parents[2] / "data/sql/db-world/base/worldforged_ascension_items.sql"
         out.write_text(sql, encoding="utf-8")

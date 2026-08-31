@@ -329,6 +329,12 @@ are substantial enough to stand on their own).
     not perform.
   - **SpellIcon.dbc**: +198 rows, plus the `.blp` icon files that WotLK never
     shipped.
+  - **DisenchantID**: not client-side at all, but the same class of omission -
+    it was missing from the item INSERT, and an item with 0 there cannot be
+    disenchanted. The id is not derivable from the item; WotLK assigns it per
+    class, quality and item level band, weapons on one series and armour on
+    another. Each import takes the id of the closest real WotLK item of the same
+    shape, so a level 12 one-handed axe gets 21 - what "Stonesplinter Axe" has.
   - **Item.dbc**: a row per imported item. Easy to miss, because leaving it out
     fails in a way that looks like something else entirely: the item shows its
     correct 3D model and a question mark for an icon. The model comes from the
@@ -345,6 +351,30 @@ are substantial enough to stand on their own).
   so `clientpatch`'s own rows survive (its XP Boost spell is still there
   afterwards, which is the check worth repeating) - and that also means **run it
   after `clientpatch/build_patches.py`, never before**.
+
+- **`tools/launcher/`**: a launcher, so the client patch can reach someone
+  else's machine. `serve_patches.py` publishes a folder of patches over HTTP with
+  a generated `manifest.json` (a path, size and SHA-256 per file);
+  `madosa_launcher.py` is the single file a player gets - it asks once for their
+  WoW folder, then on every start compares their patches against the manifest,
+  downloads only what differs, writes the realmlist and starts the game.
+
+  There is no alternative to a launcher here: 3.3.5a has no patch download of its
+  own and the game protocol cannot carry files, which is why Ascension ships one
+  too. Two details it has to get right:
+  - **Folder spelling.** A WoW folder copied between Windows, Wine and Linux ends
+    up with any mixture of `Data`/`data` and `enUS`/`enus`, and on a
+    case-sensitive filesystem writing the wrong one creates a second directory
+    the client never reads. Manifest paths are resolved against the directories
+    that actually exist, one component at a time.
+  - **No half-written archives.** Downloads land in a `.part` file and are only
+    renamed once the hash matches, or an interrupted download would look complete
+    on the next start and break the client.
+
+  It is standard library only, and the window is optional: tkinter ships with
+  Python on Windows but is a separate package on many Linux distributions, so
+  without it the launcher runs the same routine on the terminal rather than
+  refusing to start.
 
 ## Live-tunable settings (`MadosaSettings`)
 
