@@ -245,6 +245,16 @@ are substantial enough to stand on their own).
   recreating them would be a project the size of everything else here) and
   `ItemLimitCategory` above 85, the highest WotLK ships.
 
+  **The display ids had to be re-numbered.** Ascension did not only add
+  ItemDisplayInfo rows, it reused existing ones for other things: of the 1424
+  displays these items use, 918 exist in WotLK too and mean something entirely
+  different. Display 15113 is a mage cape here and a flint axe on Ascension -
+  leave it alone and the axe renders wearing the cape's texture, which is what a
+  checkerboard model is. So every Worldforged display is copied in under a fresh
+  id from 200000 up (this client's highest real one is 69006) and the items point
+  at those. Both the SQL and the client patch derive the mapping from the same
+  `selected_items()`, so they cannot disagree.
+
   **One find per item, per character.** A character may claim each distinct
   Worldforged item once, tracked in `character_worldforged_ascension_loot`. That
   table is keyed by *item*, not by spot, because the 1509 items are spread over
@@ -253,7 +263,22 @@ are substantial enough to stand on their own).
   streaming scan knows about it, so a cache you have finished simply stops
   appearing rather than standing there to refuse you, and the world visibly
   empties out as your collection fills up. The per-spot respawn timer stays
-  underneath: it is what lets an alt find the spot again later.
+  A cache is never consumed - it stands where it stands for anyone who has not
+  claimed its item, and simply stops appearing for whoever has.
+
+  **Two things about the placement**, both found by walking to a spot in-game.
+  LootCollector records one find *per player*, so a single Ascension chest
+  arrives as several entries a few yards apart - three "Claw of Vagash"
+  recordings within ten yards are one chest seen by three people. Entries of the
+  same item within 40 yards are merged, which takes 3608 raw locations down to
+  1633 real ones. And the ground search does **not** start from MAX_HEIGHT, the
+  obvious choice: several finds are inside caves, and the first surface below the
+  sky is the mountain sitting on top of one - which put three chests on a Dun
+  Morogh mountainside instead of in the cave below it. It starts just above the
+  player who pulled the cache in instead; they are within 300 yards and, if the
+  find is in a cave, they are in it too. Ascension's data cannot settle this on
+  its own: LootCollector stores map percentages and zone ids, never a height, and
+  the client's gameobject cache holds names and models but no positions.
 
   **Streamed, not spawned.** 3608 permanent objects would mean 3608 map grids
   resident for the rest of the uptime, since this core never unloads one. So a

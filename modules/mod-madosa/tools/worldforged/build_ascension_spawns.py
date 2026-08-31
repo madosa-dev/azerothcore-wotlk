@@ -53,6 +53,11 @@ DBC_DIR = HOME / "azerothcore/env/dist/data/dbc"
 sys.path.insert(0, str(HOME / "azerothcore/modules/mod-madosa/tools/clientpatch"))
 
 DISCOVERY_WORLDFORGED = 1
+
+# Two finds of the same item closer together than this are the same chest, seen
+# by two different players. Generous, because LootCollector stores where the
+# *finder stood*, not where the object was.
+MERGE_DISTANCE = 40.0
 ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789()"
 ALPHABET_INDEX = {c: i for i, c in enumerate(ALPHABET)}
 
@@ -191,6 +196,10 @@ def build_sql(points, dropped_zones):
         "-- same way the core's Zone2MapCoordinates() does. Verified against this world\n"
         "-- database: the median point lands 16 yards from the nearest creature spawn.\n"
         "--\n"
+        "-- Several players finding the same chest each produced their own recording,\n"
+        "-- so entries of the same item within a few yards are merged into one -\n"
+        "-- otherwise the world gets three chests side by side where Ascension has one.\n"
+        "--\n"
         "-- `item` is the Worldforged item Ascension players actually found at that spot.\n"
         "-- There is no Z: ground height needs the server's map data and is resolved with\n"
         "-- Map::GetHeight() when the cache is streamed in.\n"
@@ -230,6 +239,24 @@ def main():
             "map": entry["virtual_map_id"] if entry["virtual_map_id"] >= 0 else entry["map_id"],
             "x": x, "y": y, "item": d["itemID"], "zone": zone,
         })
+
+    # LootCollector records a find per player, so one physical Ascension spot
+    # shows up several times a few yards apart - three "Claw of Vagash" entries
+    # within ten yards of each other are one chest, recorded by three people.
+    # Collapse each cluster of the same item into a single point, or the world
+    # ends up with duplicate chests standing side by side.
+    points.sort(key=lambda p: (p["item"], p["map"], p["x"], p["y"]))
+    merged, duplicates = [], 0
+    for point in points:
+        near = next((k for k in reversed(merged)
+                     if k["item"] == point["item"] and k["map"] == point["map"]
+                     and (k["x"] - point["x"]) ** 2 + (k["y"] - point["y"]) ** 2 <= MERGE_DISTANCE ** 2), None)
+        if near:
+            duplicates += 1
+            continue
+        merged.append(point)
+    points = merged
+    print(f"{duplicates} duplicate recordings of the same spot merged away", file=sys.stderr)
 
     # Sorted so a regeneration produces a stable file instead of hash-order churn.
     points.sort(key=lambda p: (p["map"], round(p["x"], 4), round(p["y"], 4), p["item"]))

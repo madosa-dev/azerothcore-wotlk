@@ -212,16 +212,36 @@ def read_dbc_string(dbc, offset):
 # Which displays do the Worldforged items need?
 # --------------------------------------------------------------------------
 
-def worldforged_displays(cache_path):
-    """(displayid, class, subclass, inventory_type) for every Worldforged item."""
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from build_ascension_items import read_cache
+def worldforged_displays():
+    """(ascension display id -> local id) plus what kind of item uses each.
 
-    out = {}
-    for it in read_cache(cache_path):
-        if WORLDFORGED_TAG in (it["description"] or ""):
-            out.setdefault(it["displayid"], (it["class"], it["subclass"], it["inventory_type"]))
-    return out
+    The mapping comes from build_ascension_items so the SQL and this patch number
+    the displays identically - they must, or every item would point at the wrong
+    picture.
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from build_ascension_items import selected_items, display_map
+
+    items, _, _ = selected_items()
+    mapping = display_map(items)
+    kinds = {}
+    for it in items:
+        kinds.setdefault(it["displayid"], (it["class"], it["subclass"], it["inventory_type"]))
+    return mapping, kinds
+
+
+def wotlk_display_donors():
+    """One existing display per (class, subclass, slot), to borrow a model from.
+
+    Only used for the rows whose Ascension model this client does not have; the
+    item still shows its own Ascension icon, it just holds a WotLK-shaped weapon.
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from build_ascension_spells import query
+
+    rows = query("SELECT class, subclass, InventoryType, MIN(displayid) FROM item_template "
+                 "WHERE entry < 100000 AND displayid > 0 GROUP BY class, subclass, InventoryType;")
+    return {(int(c), int(sc), int(inv)): int(d) for c, sc, inv, d in rows}
 
 
 def find_model_folder(archives, model):
@@ -280,42 +300,36 @@ def main():
     base = DBC(str(base_path))
     print(f"Ascension ItemDisplayInfo: {asc.rc} rows | client's ({base_from}): {base.rc} rows")
 
-    needed = worldforged_displays(ITEM_CACHE)
-    have = {r[0] for r in base.rows()}
+    mapping, kinds = worldforged_displays()
     asc_rows = {r[0]: r for r in asc.rows()}
-    missing = sorted(d for d in needed if d not in have and d in asc_rows)
-    print(f"Worldforged displays: {len(needed)} used, {len(needed) - len(missing)} already present, "
-          f"{len(missing)} to add")
-
-    # Donors for rows whose model this client lacks, indexed by (class, subclass,
-    # inventory type) so a missing sword borrows from a sword.
-    by_kind = {}
-    for display, kind in needed.items():
-        if display in have:
-            by_kind.setdefault(kind, []).append(display)
     base_rows = {r[0]: r for r in base.rows()}
+    donors = wotlk_display_donors()
+    print(f"Worldforged displays: {len(mapping)} re-numbered from {min(mapping.values())} up")
 
     builder = DBCBuilder(str(base_path))
     icons_needed = set()
-    substituted = 0
+    substituted = missing_rows = 0
 
-    for display in missing:
-        src = list(asc_rows[display])
-        strings = {f: asc.s(src[f]) for f in STRING_FIELDS}
+    for asc_id, local_id in sorted(mapping.items(), key=lambda kv: kv[1]):
+        src = asc_rows.get(asc_id)
+        if not src:
+            # Not in Ascension's table either. Fall back to whatever this client
+            # has under that id - wrong more often than not, but better than an
+            # item pointing at a display that exists nowhere.
+            src = base_rows.get(asc_id)
+            if not src:
+                missing_rows += 1
+                continue
+            strings = {f: base.s(src[f]) for f in STRING_FIELDS}
+        else:
+            strings = {f: asc.s(src[f]) for f in STRING_FIELDS}
 
-        model_ok = True
-        for f in MODEL_FIELDS:
-            if strings[f] and not find_model_folder(client_archives, strings[f]):
-                model_ok = False
+        row = list(src)
+        row[0] = local_id
 
-        if not model_ok:
-            donor_id = None
-            for candidate in by_kind.get(needed[display], ()):
-                if candidate in base_rows:
-                    donor_id = candidate
-                    break
-            if donor_id is not None:
-                donor = base_rows[donor_id]
+        if any(strings[f] and not find_model_folder(client_archives, strings[f]) for f in MODEL_FIELDS):
+            donor = base_rows.get(donors.get(kinds.get(asc_id, ()), 0))
+            if donor:
                 for f in MODEL_FIELDS + MODEL_TEXTURE_FIELDS + list(range(15, 23)):
                     strings[f] = base.s(donor[f])
             else:
@@ -323,15 +337,16 @@ def main():
                     strings[f] = ""
             substituted += 1
 
-        if strings[5]:
-            icons_needed.add(strings[5])
-        if strings[6]:
-            icons_needed.add(strings[6])
+        for f in (5, 6):
+            if strings[f]:
+                icons_needed.add(strings[f])
 
         for f in STRING_FIELDS:
-            src[f] = builder.addstr(strings[f])
-        builder.append(src)
+            row[f] = builder.addstr(strings[f])
+        builder.append(row)
 
+    if missing_rows:
+        print(f"  WARNING: {missing_rows} display(s) found in neither table")
     print(f"  {substituted} rows had a model this client lacks and borrowed a WotLK one")
 
     dbc_out = OUT / "client_ItemDisplayInfo.dbc"

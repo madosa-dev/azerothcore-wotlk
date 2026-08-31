@@ -339,21 +339,6 @@ Madosa.Worldforged.GoldPerLevel = 500
 #
 Madosa.Worldforged.Ascension.Enable = 1
 
-# Madosa.Worldforged.Ascension.RespawnMinutes
-#
-#        Description: How long a looted Ascension spot stays empty before it holds its
-#                     item again.
-#
-#                     Note this is not what stops you re-farming a spot: each character
-#                     may claim any given Worldforged item only once, whichever of the
-#                     places holding it they reach first, and a cache they have finished
-#                     stops appearing for them entirely. This timer is what lets a
-#                     second character - or an alt - find that spot again later.
-#
-#        Default:     120
-#
-Madosa.Worldforged.Ascension.RespawnMinutes = 120
-
 # Madosa.Addon.Enable
 #
 #        Description: Lets the MadosaControl client addon read and change the

@@ -133,12 +133,4 @@ CREATE TABLE IF NOT EXISTS `mod_madosa_worldforged_ascension_spells` (
   PRIMARY KEY (`spell`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='mod-madosa: spell_dbc rows owned by the Ascension Worldforged import';
 
--- When each looted spot becomes available again. Only looted spots appear here;
--- an absent row means "ready". Kept in the characters DB rather than the world
--- DB would be more orthodox, but this is world state, not character state, and
--- keeping it beside the spawn table means one less database to reason about.
-CREATE TABLE IF NOT EXISTS `mod_madosa_worldforged_ascension_cooldowns` (
-  `id` INT UNSIGNED NOT NULL,
-  `available_at` BIGINT NOT NULL DEFAULT 0,
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='mod-madosa: per-spot respawn timers for Ascension Worldforged';
+DROP TABLE IF EXISTS `mod_madosa_worldforged_ascension_cooldowns`;

@@ -51,11 +51,11 @@
 // Dagger at one of them finishes every other spot holding one, instead of
 // letting you farm duplicates a few hills apart.
 //
-// The streaming scan knows about this, so a cache a character has finished
-// simply stops appearing for them rather than standing there to refuse them -
-// which also means the world visibly empties out as a collection fills up. The
-// per-spot respawn timer stays underneath it all the same: it is what lets a
-// second character, or an alt, find the spot again later.
+// A cache is never consumed: it stands where it stands for anyone who has not
+// claimed its item yet, and simply stops appearing for whoever has. There is no
+// respawn timer, because there is nothing to respawn - the world empties out
+// per character as a collection fills up, and a fresh character finds every spot
+// still holding what it always held.
 
 #include "mod_madosa_settings.h"
 
@@ -73,6 +73,7 @@
 #include "StringFormat.h"
 #include "WorldDatabase.h"
 
+#include <cmath>
 #include <mutex>
 #include <shared_mutex>
 #include <unordered_map>
@@ -93,6 +94,18 @@ namespace
     // Half a yard above the ground: flush with the terrain the model sinks into it.
     constexpr float GROUND_OFFSET = 0.5f;
 
+    // A treasure nobody can walk to is not a treasure. Ascension's coordinates
+    // record where the *finder stood*, and they arrive here through two
+    // coordinate systems, so a spot can land a few yards onto a slope too steep
+    // for WoW to climb - which is how caches ended up embedded in a Dun Morogh
+    // mountainside. Sample the ground around a point and, when it is that steep,
+    // spiral outwards for somewhere level.
+    constexpr float SLOPE_SAMPLE = 3.0f;         // how far out to sample, in yards
+    constexpr float MAX_SLOPE_RISE = 1.6f;       // ~28 degrees across SLOPE_SAMPLE
+    constexpr float FLAT_SEARCH_RADIUS = 25.0f;  // far enough to leave a slope, near
+    constexpr uint32 FLAT_SEARCH_RINGS = 5;      // enough that it is still "the spot"
+    constexpr uint32 FLAT_SEARCH_POINTS = 8;
+
     struct SpawnPoint
     {
         uint32 id;
@@ -111,7 +124,6 @@ namespace
     std::mutex stateMutex;
     std::unordered_map<uint32, ObjectGuid> liveCaches;      // spawn point id -> object
     std::unordered_map<ObjectGuid, uint32> cacheOwners;     // object -> spawn point id
-    std::unordered_map<uint32, time_t> cooldowns;           // spawn point id -> available again at
 
     // What each online character has already claimed, keyed by item rather than
     // by spot: several places hold the same item, and one claim finishes all of
@@ -161,23 +173,6 @@ namespace
         LOG_INFO("module", "mod-madosa: loaded {} Ascension Worldforged locations.", spawnPoints.size());
     }
 
-    void LoadCooldowns()
-    {
-        std::lock_guard<std::mutex> lock(stateMutex);
-        cooldowns.clear();
-
-        QueryResult result = WorldDatabase.Query(
-            "SELECT id, available_at FROM mod_madosa_worldforged_ascension_cooldowns");
-        if (!result)
-            return;
-
-        do
-        {
-            Field* fields = result->Fetch();
-            cooldowns[fields[0].Get<uint32>()] = static_cast<time_t>(fields[1].Get<int64>());
-        } while (result->NextRow());
-    }
-
     // Positions of every real player in the world, so the scan knows where to
     // stream. Bots are skipped: they must neither pull caches into existence nor
     // keep them alive.
@@ -187,6 +182,7 @@ namespace
         uint32 map;
         float x;
         float y;
+        float z;
     };
 
     std::vector<Watcher> RealPlayerPositions()
@@ -196,7 +192,7 @@ namespace
         for (auto const& [guid, player] : ObjectAccessor::GetPlayers())
             if (player->IsInWorld() && !GET_PLAYERBOT_AI(player))
                 out.push_back({ player->GetGUID().GetCounter(), player->GetMapId(),
-                    player->GetPositionX(), player->GetPositionY() });
+                    player->GetPositionX(), player->GetPositionY(), player->GetPositionZ() });
 
         return out;
     }
@@ -213,9 +209,12 @@ namespace
     // yet". That is what makes the world visibly empty out as a character
     // collects, instead of leaving chests standing that would only refuse them.
     // Callers hold stateMutex.
-    bool NeededNearby(SpawnPoint const& point, std::vector<Watcher> const& watchers, float range)
+    Watcher const* NeededNearby(SpawnPoint const& point, std::vector<Watcher> const& watchers, float range)
     {
         float rangeSq = range * range;
+        Watcher const* best = nullptr;
+        float bestDistSq = rangeSq;
+
         for (Watcher const& w : watchers)
         {
             if (w.map != point.map)
@@ -223,16 +222,101 @@ namespace
 
             float dx = w.x - point.x;
             float dy = w.y - point.y;
-            if (dx * dx + dy * dy > rangeSq)
+            float distSq = dx * dx + dy * dy;
+            if (distSq > rangeSq || distSq > bestDistSq)
                 continue;
 
-            if (!AlreadyClaimed(w.guid, point.item))
-                return true;
+            if (AlreadyClaimed(w.guid, point.item))
+                continue;
+
+            // The nearest of them, because their height is what the ground search
+            // starts from - and the nearest is the likeliest to be standing on the
+            // same floor as the find.
+            best = &w;
+            bestDistSq = distSq;
         }
-        return false;
+        return best;
     }
 
-    void SpawnCache(SpawnPoint const& point)
+    // The steepest rise from (x, y) to the ground a few yards around it, and the
+    // ground height itself. Negative when there is no ground to stand on.
+    float GroundRoughness(Map* map, float x, float y, float from, float& outZ)
+    {
+        outZ = map->GetHeight(x, y, from);
+        if (outZ <= INVALID_HEIGHT)
+            return -1.0f;
+
+        float worst = 0.0f;
+        for (uint32 i = 0; i < 4; ++i)
+        {
+            float angle = static_cast<float>(i) * static_cast<float>(M_PI) / 2.0f;
+            float nz = map->GetHeight(x + std::cos(angle) * SLOPE_SAMPLE,
+                y + std::sin(angle) * SLOPE_SAMPLE, outZ + SLOPE_SAMPLE);
+            if (nz <= INVALID_HEIGHT)
+                return -1.0f;
+
+            worst = std::max(worst, std::fabs(nz - outZ));
+        }
+        return worst;
+    }
+
+    // Ground a player could stand on at or near (x, y), searched downwards from
+    // `from`. Where the spot itself is too steep, the most level place found
+    // spiralling outwards is used instead - close enough to still be the same
+    // find, far enough to be off the cliff.
+    bool FindStandableGround(Map* map, float from, float& x, float& y, float& z)
+    {
+        float groundZ = 0.0f;
+        float roughness = GroundRoughness(map, x, y, from, groundZ);
+        if (roughness >= 0.0f && roughness <= MAX_SLOPE_RISE)
+        {
+            z = groundZ;
+            return true;
+        }
+
+        float bestX = x, bestY = y, bestZ = groundZ, best = roughness;
+        for (uint32 ring = 1; ring <= FLAT_SEARCH_RINGS; ++ring)
+        {
+            float radius = FLAT_SEARCH_RADIUS * static_cast<float>(ring) / static_cast<float>(FLAT_SEARCH_RINGS);
+            for (uint32 i = 0; i < FLAT_SEARCH_POINTS; ++i)
+            {
+                float angle = static_cast<float>(i) * 2.0f * static_cast<float>(M_PI)
+                    / static_cast<float>(FLAT_SEARCH_POINTS);
+                float cx = x + std::cos(angle) * radius;
+                float cy = y + std::sin(angle) * radius;
+                float cz = 0.0f;
+                float r = GroundRoughness(map, cx, cy, from, cz);
+                if (r < 0.0f)
+                    continue;
+
+                if (r <= MAX_SLOPE_RISE)
+                {
+                    x = cx;
+                    y = cy;
+                    z = cz;
+                    return true;
+                }
+
+                if (best < 0.0f || r < best)
+                {
+                    best = r;
+                    bestX = cx;
+                    bestY = cy;
+                    bestZ = cz;
+                }
+            }
+        }
+
+        if (best < 0.0f)
+            return false;
+
+        x = bestX;
+        y = bestY;
+        z = bestZ;
+        return true;
+    }
+
+    void SpawnCache(SpawnPoint const& point, float searchFrom)
     {
         Map* map = sMapMgr->FindBaseNonInstanceMap(point.map);
         if (!map)
@@ -242,21 +326,28 @@ namespace
         // is wide, so the cache's own grid still may not be loaded.
         map->LoadGrid(point.x, point.y);
 
-        // The spawn table has no Z on purpose. Now that the grid is here, ask the
-        // map where the ground actually is; MAX_HEIGHT means "search down from the
-        // top", which is what gets a sane answer on a slope or in a canyon.
-        float z = map->GetHeight(point.x, point.y, MAX_HEIGHT);
-        if (z <= INVALID_HEIGHT)
+
+        // The spawn table has no Z on purpose; the ground is found here, now that
+        // the grid is loaded. Searching down from MAX_HEIGHT would be the obvious
+        // thing and is wrong: several of these spots are inside caves, and the
+        // first surface below the sky is the mountain sitting on top of one. So
+        // the search starts a little above the player who pulled this cache in -
+        // they are within 300 yards and, if the find is in a cave, they are in it.
+        float x = point.x;
+        float y = point.y;
+        float z = 0.0f;
+        if (!FindStandableGround(map, searchFrom + SLOPE_SAMPLE, x, y, z)
+            && !FindStandableGround(map, MAX_HEIGHT, x, y, z))
         {
-            LOG_DEBUG("module", "mod-madosa: Ascension Worldforged spot {} has no ground at {}, {} on map {}.",
-                point.id, point.x, point.y, point.map);
+            LOG_DEBUG("module", "mod-madosa: Ascension Worldforged spot {} has no standable ground at {}, {} "
+                "on map {}.", point.id, point.x, point.y, point.map);
             return;
         }
 
         GameObject* cache = new GameObject();
         G3D::Quat rotation = G3D::Quat::fromAxisAngleRotation(G3D::Vector3::unitZ(), 0.0f);
         if (!cache->Create(map->GenerateLowGuid<HighGuid::GameObject>(), CACHE_GO_ENTRY, map, PHASEMASK_NORMAL,
-            point.x, point.y, z + GROUND_OFFSET, 0.0f, rotation, 0, GO_STATE_READY))
+            x, y, z + GROUND_OFFSET, 0.0f, rotation, 0, GO_STATE_READY))
         {
             delete cache;
             LOG_ERROR("module", "mod-madosa: could not create gameobject {} (is worldforged.sql applied?)",
@@ -287,9 +378,8 @@ namespace
     void StreamCaches()
     {
         std::vector<Watcher> watchers = RealPlayerPositions();
-        time_t now = GameTime::GetGameTime().count();
 
-        std::vector<SpawnPoint const*> toSpawn;
+        std::vector<std::pair<SpawnPoint const*, float>> toSpawn;
         std::vector<std::pair<uint32, ObjectGuid>> toDespawn;
 
         {
@@ -311,25 +401,16 @@ namespace
                     continue;
                 }
 
-                if (auto cooldown = cooldowns.find(point.id); cooldown != cooldowns.end())
-                {
-                    if (cooldown->second > now)
-                        continue;
-                    cooldowns.erase(cooldown);
-                    WorldDatabase.Execute("DELETE FROM mod_madosa_worldforged_ascension_cooldowns WHERE id = {}",
-                        point.id);
-                }
-
-                if (NeededNearby(point, watchers, STREAM_IN_RANGE))
-                    toSpawn.push_back(&point);
+                if (Watcher const* watcher = NeededNearby(point, watchers, STREAM_IN_RANGE))
+                    toSpawn.push_back({ &point, watcher->z });
             }
         }
 
         for (auto const& [mapId, guid] : toDespawn)
             DespawnCache(mapId, guid);
 
-        for (SpawnPoint const* point : toSpawn)
-            SpawnCache(*point);
+        for (auto const& [point, searchFrom] : toSpawn)
+            SpawnCache(*point, searchFrom);
     }
 
     void LoadClaimedItems(ObjectGuid::LowType guid)
@@ -366,20 +447,6 @@ namespace
             guid, item, static_cast<int64>(GameTime::GetGameTime().count()));
     }
 
-    void PutOnCooldown(uint32 pointId)
-    {
-        time_t availableAt = GameTime::GetGameTime().count()
-            + MadosaSettings::GetWorldforgedAscensionRespawn() * MINUTE;
-
-        {
-            std::lock_guard<std::mutex> lock(stateMutex);
-            cooldowns[pointId] = availableAt;
-        }
-
-        WorldDatabase.Execute(
-            "REPLACE INTO mod_madosa_worldforged_ascension_cooldowns (id, available_at) VALUES ({}, {})",
-            pointId, static_cast<int64>(availableAt));
-    }
 }
 
 class mod_madosa_worldforged_ascension_world : public WorldScript
@@ -392,7 +459,6 @@ public:
     void OnStartup() override
     {
         LoadSpawnPoints();
-        LoadCooldowns();
     }
 
     void OnUpdate(uint32 diff) override
@@ -500,7 +566,6 @@ public:
             liveCaches.erase(pointId);
         }
 
-        PutOnCooldown(pointId);
         go->Delete();
         return true;
     }

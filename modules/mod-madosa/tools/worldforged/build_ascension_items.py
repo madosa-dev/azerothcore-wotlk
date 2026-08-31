@@ -52,6 +52,18 @@ WDB_HEADER = 24
 MAX_STATS = 10          # item_template has stat_type1..10
 MAX_ITEM_LIMIT_CATEGORY = 85    # highest id in WotLK's ItemLimitCategory.dbc
 
+# Ascension did not just add ItemDisplayInfo rows, it reused existing ones for
+# other things: of the 1424 displays these items use, 918 exist in WotLK too and
+# mean something completely different there. Display 15113 is a mage cape here
+# and a flint axe on Ascension - leave it alone and the axe renders with the
+# cape's texture, which is what a checkerboard model is.
+#
+# So every Worldforged display is re-numbered into a range nothing else uses, and
+# the Ascension row is copied in under the new id. Nothing existing is disturbed
+# and every item gets its true appearance. The client patch derives the same
+# mapping from the same items, so both sides agree without sharing a file.
+DISPLAY_ID_BASE = 200000     # this client's highest real display id is 69006
+
 
 class Reader:
     def __init__(self, b):
@@ -110,6 +122,35 @@ def parse_item(entry, body):
     return it
 
 
+def selected_items(cache_path=None):
+    """The Worldforged items this module imports, in id order.
+
+    Shared with the client patch: both sides must select exactly the same items,
+    or display_map() would number them differently and every item would point at
+    the wrong picture.
+    """
+    everything = read_cache(cache_path or WDB)
+    by_entry = {i["entry"]: i for i in everything}
+
+    keep = {i["entry"] for i in everything if WORLDFORGED_TAG in (i["description"] or "")}
+    untagged = 0
+    for entry in sorted(located_items()):
+        item = by_entry.get(entry)
+        if entry in keep or not item:
+            continue
+        if item["class"] in (ITEM_CLASS_WEAPON, ITEM_CLASS_ARMOR):
+            keep.add(entry)
+            untagged += 1
+
+    return sorted((by_entry[e] for e in keep), key=lambda i: i["entry"]), len(everything), untagged
+
+
+def display_map(items):
+    """Ascension display id -> the id it gets here. See DISPLAY_ID_BASE."""
+    used = sorted({i["displayid"] for i in items if i["displayid"]})
+    return {asc: DISPLAY_ID_BASE + n for n, asc in enumerate(used)}
+
+
 def located_items():
     """Every item id that has a recorded Worldforged find location."""
     from build_ascension_spawns import load_discoveries, STARTER_DB, DISCOVERY_WORLDFORGED
@@ -163,7 +204,7 @@ COLUMNS = (
 )
 
 
-def row(it):
+def row(it, displays):
     stats = it["stats"][:MAX_STATS]
     stat_fields = []
     for i in range(MAX_STATS):
@@ -181,7 +222,8 @@ def row(it):
 
     v = [
         it["entry"], it["class"], it["subclass"], it["sound_override_subclass"],
-        f"'{esc(it['name'])}'", it["displayid"], it["quality"], it["flags"], it["flags2"],
+        f"'{esc(it['name'])}'", displays.get(it["displayid"], 0), it["quality"],
+        it["flags"], it["flags2"],
         1, it["buy_price"], it["sell_price"], it["inventory_type"],
         it["allowable_class"], it["allowable_race"], it["item_level"], it["required_level"],
         it["required_skill"], it["required_skill_rank"],
@@ -211,7 +253,7 @@ def row(it):
     return "(" + ",".join(str(x) for x in v) + ")"
 
 
-def build_sql(items):
+def build_sql(items, displays):
     head = (
         "-- Ascension's Worldforged items, as real item_template rows.\n"
         "--\n"
@@ -229,7 +271,9 @@ def build_sql(items):
         "--   * requiredspell and startquest, which name Ascension spells and quests\n"
         "--   * ItemLimitCategory above 85, the highest WotLK ships\n"
         "--\n"
-        f"-- {len(items)} items.\n"
+        f"-- {len(items)} items, using {len(displays)} re-numbered display ids from\n"
+        f"-- {DISPLAY_ID_BASE} up - see the tool's DISPLAY_ID_BASE note for why the original\n"
+        "-- ids cannot be used as they stand.\n"
         "--\n"
         "-- Most identify themselves by an '@Worldforged@' description tag. A few carry\n"
         "-- no tag but sit at a recorded Worldforged find, and the gear among those is\n"
@@ -242,7 +286,7 @@ def build_sql(items):
         "\n"
         f"INSERT INTO `item_template` ({COLUMNS}) VALUES\n"
     )
-    return head + ",\n".join(row(i) for i in items) + ";\n"
+    return head + ",\n".join(row(i, displays) for i in items) + ";\n"
 
 
 def main():
@@ -254,29 +298,12 @@ def main():
     if not args.cache.exists():
         raise SystemExit(f"item cache not found: {args.cache}")
 
-    everything = read_cache(args.cache)
-    by_entry = {i["entry"]: i for i in everything}
-
-    keep = {i["entry"] for i in everything if WORLDFORGED_TAG in (i["description"] or "")}
-
-    # A handful of items sit at a recorded Worldforged find but carry no tag - a
-    # newer content patch, most likely. Take the gear among them anyway, so no
-    # location is left holding nothing; skip the rest (a potion, a recipe and a
-    # pet), whose entire function is an Ascension spell that cannot come across.
-    untagged = 0
-    for entry in sorted(located_items()):
-        item = by_entry.get(entry)
-        if entry in keep or not item:
-            continue
-        if item["class"] in (ITEM_CLASS_WEAPON, ITEM_CLASS_ARMOR):
-            keep.add(entry)
-            untagged += 1
-
-    items = sorted((by_entry[e] for e in keep), key=lambda i: i["entry"])
+    items, cached_total, untagged = selected_items(args.cache)
     if not items:
         raise SystemExit(f"no items tagged {WORLDFORGED_TAG} in {args.cache}")
 
-    sql = build_sql(items)
+    displays = display_map(items)
+    sql = build_sql(items, displays)
     if args.write:
         out = Path(__file__).resolve().parents[2] / "data/sql/db-world/base/worldforged_ascension_items.sql"
         out.write_text(sql, encoding="utf-8")
@@ -285,7 +312,7 @@ def main():
         sys.stdout.write(sql)
 
     with_effects = sum(1 for i in items if any(s[0] > 0 for s in i["spells"]))
-    print(f"{len(items)} Worldforged items of {len(everything)} cached "
+    print(f"{len(items)} Worldforged items of {cached_total} cached "
           f"({untagged} untagged but sitting at a recorded find); "
           f"{with_effects} carry an effect - run build_ascension_spells.py so those exist",
           file=sys.stderr)
