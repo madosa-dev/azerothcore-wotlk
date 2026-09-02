@@ -59,6 +59,83 @@ def load_spell_text() -> dict:
 
 SPELL_TEXT = load_spell_text()
 
+
+def load_item_data() -> dict:
+    try:
+        return json.loads((ICONS_DIR / "itemdata.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+ITEM_DATA = load_item_data()
+
+# item_instance.enchantments is twelve slots of "id duration charges"; these
+# are the slots a tooltip talks about.
+ENCHANT_SLOT_PERMANENT = 0
+ENCHANT_SLOTS_RANDOM = range(7, 12)   # PROP_ENCHANTMENT_SLOT_0..4
+ENCHANT_TYPE_STAT = 5
+
+# Which of RandPropPoints' five columns an inventory type draws from - the
+# core's Item::GetItemSuffixFactor(), and the reason a suffix on a chest is
+# worth more than the same suffix on a ring.
+SUFFIX_COLUMN = {
+    1: 0, 4: 0, 5: 0, 7: 0, 17: 0, 20: 0,
+    3: 1, 6: 1, 8: 1, 10: 1, 12: 1,
+    2: 2, 9: 2, 11: 2, 14: 2, 16: 2, 23: 2,
+    13: 3, 21: 3, 22: 3,
+    15: 4, 25: 4, 26: 4,
+}
+
+
+def suffix_factor(item_level: int, quality: int, inv_type: int) -> int:
+    row = ITEM_DATA.get("points", {}).get(str(item_level))
+    column = SUFFIX_COLUMN.get(inv_type)
+    if not row or column is None:
+        return 0
+    if quality in (4, 5, 6):
+        return row[0][column]
+    if quality in (3, 7):
+        return row[1][column]
+    if quality == 2:
+        return row[2][column]
+    return 0
+
+
+def enchant_lines(enchantments: str, random_property_id: int, item_level: int, quality: int, inv_type: int):
+    """The item's suffix (if any) and the tooltip lines its enchantments add:
+    [name, stat] for the white "+N Stat" kind, [name, other] for the rest."""
+    enchants = ITEM_DATA.get("enchants", {})
+    numbers = enchantments.split()
+    slot_ids = [int(numbers[3 * k]) for k in range(12) if 3 * k < len(numbers)]
+
+    suffix_name = ""
+    factor = 0
+    allocation = {}
+    if random_property_id < 0:
+        entry = ITEM_DATA.get("suffixes", {}).get(str(-random_property_id))
+        if entry:
+            suffix_name = entry[0]
+            factor = suffix_factor(item_level, quality, inv_type)
+            allocation = {ench_id: pct for ench_id, pct in zip(entry[1], entry[2]) if ench_id}
+    elif random_property_id > 0:
+        entry = ITEM_DATA.get("properties", {}).get(str(random_property_id))
+        if entry:
+            suffix_name = entry[0]
+
+    lines = []
+    for slot, ench_id in enumerate(slot_ids):
+        if not ench_id or (slot != ENCHANT_SLOT_PERMANENT and slot not in ENCHANT_SLOTS_RANDOM):
+            continue
+        entry = enchants.get(str(ench_id))
+        if not entry:
+            continue
+        text, types = entry
+        if "$i" in text:
+            value = allocation.get(ench_id, 0) * factor // 10000
+            text = text.replace("$i", str(value))
+        lines.append([text, "stat" if all(t in (0, ENCHANT_TYPE_STAT) for t in types) else "other"])
+    return suffix_name, lines
+
 # item_template.stat_type -> what the tooltip says. The first group are the
 # white "+N Stat" lines; everything else the game phrases as a green "Equip:"
 # line, and so does this.
@@ -118,10 +195,13 @@ def item_tooltip(g: list) -> dict:
      max_durability, sell_price, description, durability) = (
         int(g[7]), int(g[8]), int(g[9]), int(g[10]), int(g[11]), int(g[12]), float(g[13]), float(g[14]),
         int(g[15]), int(g[16]), int(g[17]), g[18], int(g[19]))
-    stats = [(int(g[20 + 2 * k]), int(g[21 + 2 * k])) for k in range(10)]
-    spells = [(int(g[40 + 2 * k]), int(g[41 + 2 * k])) for k in range(3)]
+    stats = [(int(g[22 + 2 * k]), int(g[23 + 2 * k])) for k in range(10)]
+    spells = [(int(g[42 + 2 * k]), int(g[43 + 2 * k])) for k in range(3)]
+    suffix, enchants = enchant_lines(g[20], int(g[21]), int(g[4]), int(g[3]), inv_type)
 
     tip = {
+        "suffix": suffix,
+        "enchants": enchants,
         "binding": BINDING.get(bonding, ""),
         "slot": INVENTORY_TYPE.get(inv_type, ""),
         "type": "",
@@ -306,6 +386,7 @@ class DB:
             "SELECT ci.slot, ii.itemEntry, it.name, it.Quality, it.ItemLevel, it.displayid, it.InventoryType, "
             "it.class, it.subclass, it.InventoryType, it.bonding, it.RequiredLevel, it.armor, "
             "it.dmg_min1, it.dmg_max1, it.delay, it.MaxDurability, it.SellPrice, it.description, ii.durability, "
+            "ii.enchantments, ii.randomPropertyId, "
             + ", ".join(f"it.stat_type{k}, it.stat_value{k}" for k in range(1, 11)) + ", "
             + ", ".join(f"it.spellid_{k}, it.spelltrigger_{k}" for k in range(1, 4)) + " "
             "FROM character_inventory ci "
@@ -320,7 +401,7 @@ class DB:
                 "displayId": int(g[5]), "icon": ICON_BY_DISPLAY_ID.get(g[5], ""),
                 "tooltip": item_tooltip(g),
             }
-            for g in gear if len(g) >= 46
+            for g in gear if len(g) >= 48
         ]
         rated = [e["ilvl"] for e in equipment if e["slot"] not in COSMETIC_SLOTS]
         avg_ilvl = round(sum(rated) / len(rated)) if rated else 0

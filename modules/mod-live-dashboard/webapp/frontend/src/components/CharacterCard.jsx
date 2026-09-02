@@ -51,7 +51,9 @@ function Slot({ label, item, side, onHover }) {
             : <span className="pd-empty" />}
         {item && <span className="pd-ilvl">{item.ilvl}</span>}
       </div>
-      <span className="pd-label" style={color ? { color } : undefined}>{item ? item.name : label}</span>
+      <span className="pd-label" style={color ? { color } : undefined}>
+        {item ? `${item.name}${item.tooltip?.suffix ? ` ${item.tooltip.suffix}` : ''}` : label}
+      </span>
     </div>
   )
 }

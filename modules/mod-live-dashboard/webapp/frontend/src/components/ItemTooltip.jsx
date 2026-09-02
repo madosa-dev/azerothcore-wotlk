@@ -44,7 +44,7 @@ export default function ItemTooltip({ item, anchor, onClose }) {
 
   return (
     <div ref={ref} className="tip" style={pos} onClick={onClose}>
-      <div className="tip-name" style={{ color }}>{item.name}</div>
+      <div className="tip-name" style={{ color }}>{item.name}{tip.suffix ? ` ${tip.suffix}` : ''}</div>
       <div className="tip-line muted">Item Level {item.ilvl}</div>
       {tip.binding && <div className="tip-line">{tip.binding}</div>}
       {(tip.slot || tip.type) && (
@@ -62,6 +62,9 @@ export default function ItemTooltip({ item, anchor, onClose }) {
       {tip.armor > 0 && <div className="tip-line">{tip.armor} Armor</div>}
       {tip.stats?.map((s, i) => (
         <div key={i} className="tip-line">{s.value > 0 ? '+' : ''}{s.value} {s.name}</div>
+      ))}
+      {tip.enchants?.map(([text, kind], i) => (
+        <div key={i} className={`tip-line${kind === 'stat' ? '' : ' green'}`}>{text}</div>
       ))}
       {tip.durability && (
         <div className="tip-line">Durability {tip.durability[0]} / {tip.durability[1]}</div>

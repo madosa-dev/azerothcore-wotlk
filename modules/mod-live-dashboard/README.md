@@ -77,6 +77,14 @@ Ascension items in the data patches) into `webapp/icons/` (~20 MB,
 gitignored). Without it the sheet still works, showing a quality-coloured
 placeholder where the icon would be.
 
+The same run writes what a tooltip needs beyond `item_template`: Spell.dbc's
+descriptions for the Equip/Use lines, and SpellItemEnchantment, ItemRandomSuffix,
+ItemRandomProperties and RandPropPoints for what a worn item's enchantments and
+random suffix actually give. That last part matters more than it sounds - the
+gear on a playerbot realm carries most of its stats as random suffixes
+("of Stamina") and enchants, none of which is in `item_template`, so without
+this data the sheet would show a helm with no stats at all.
+
 For a playerbot the card also offers actions - revive, level up, refresh,
 send it grinding, teleport it to a city, log it out - which go through the
 admin command queue below and therefore need the admin token, unlocked once in

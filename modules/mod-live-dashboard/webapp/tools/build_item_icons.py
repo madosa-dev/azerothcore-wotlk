@@ -168,6 +168,37 @@ def main():
             text[row[0]] = [desc, *values]
         (args.out / "spells.json").write_text(json.dumps(text, separators=(",", ":"), ensure_ascii=False))
         print(f"{len(text)} spell descriptions")
+
+    # What a worn item's enchantments and random suffix mean. Most of the gear
+    # on this realm carries its stats this way - playerbots roll random
+    # suffixes and enchants onto everything - and none of it is in
+    # item_template: the enchant ids are in item_instance, their names in
+    # SpellItemEnchantment.dbc ("+$i Stamina"), the suffix's name and
+    # allocation in ItemRandomSuffix.dbc, and the points $i scales from in
+    # RandPropPoints.dbc, by item level. All four go into itemdata.json.
+    def load(name):
+        raw = read_any(archives, f"DBFilesClient\\{name}.dbc")
+        if not raw:
+            return None
+        tmp.write_bytes(raw)
+        parsed = DBC(str(tmp))
+        tmp.unlink()
+        return parsed
+
+    ench = load("SpellItemEnchantment")
+    suffix = load("ItemRandomSuffix")
+    props = load("ItemRandomProperties")
+    points = load("RandPropPoints")
+    if ench and suffix and props and points:
+        data = {
+            "enchants": {row[0]: [ench.s(row[14]), list(row[2:5])] for row in ench.rows() if ench.s(row[14])},
+            "suffixes": {row[0]: [suffix.s(row[1]), list(row[19:24]), list(row[24:29])] for row in suffix.rows()},
+            "properties": {row[0]: [props.s(row[7]), list(row[2:7])] for row in props.rows()},
+            "points": {row[0]: [list(row[1:6]), list(row[6:11]), list(row[11:16])] for row in points.rows()},
+        }
+        (args.out / "itemdata.json").write_text(json.dumps(data, separators=(",", ":"), ensure_ascii=False))
+        print(f"{len(data['enchants'])} enchantments, {len(data['suffixes'])} suffixes, "
+              f"{len(data['properties'])} random properties")
     total = sum(f.stat().st_size for f in args.out.glob("*.webp"))
     print(f"done: {written} written, {missing} missing, {total / 1e6:.0f} MB in {args.out}")
 
