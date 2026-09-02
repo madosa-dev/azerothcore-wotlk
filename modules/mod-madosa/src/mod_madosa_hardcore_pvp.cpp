@@ -71,6 +71,15 @@
 // victim's own belongings. Enchantments cannot be expressed as loot, so they
 // are recorded at drop time and re-applied in OnPlayerLootItem, which hands us
 // the freshly created Item.
+//
+// The sparkle
+// -----------
+// The one place this feature reaches into the core. The client draws the
+// quest glitter on a gameobject the server flags as activatable, and the core
+// decides that from the quest log (GameObject::ActivateToQuest), which knows
+// nothing about a chest of somebody's bags. GameObjectScript::OnActivateToQuest
+// lets the chest's own script answer instead, with the same rule the loot
+// check uses - see go_madosa_death_chest at the bottom.
 
 #include "mod_madosa_chronicle.h"
 #include "mod_madosa_hardcore_pvp.h"
@@ -670,6 +679,53 @@ namespace
     {
         if (player && player->GetSession() && !IsBotSession(player))
             ChatHandler(player->GetSession()).PSendSysMessage("{}", message);
+    }
+
+    // Who may open a death chest:
+    //
+    //   the killer, the killer's group, and the victim - at once
+    //   anyone else - only if they are in High-Risk themselves
+    //
+    // The victim was originally locked out for the first two minutes, and that
+    // was wrong in a way only playing showed: on a realm where the killer is
+    // almost always a bot that walks off without looting, the victim stood next
+    // to their own belongings unable to touch them until the chest crumbled.
+    // Their own things are theirs to race for.
+    //
+    // Everyone else has to be in High-Risk. A chest is what High-Risk players
+    // stake against each other; someone who risks nothing does not get to
+    // collect from it.
+    //
+    // Answered in two places for the same chest: the loot check, and the
+    // sparkle the client draws on it - so a player only ever sees glitter on a
+    // chest they can actually open. Returns false for anything that is not one
+    // of our chests, so callers can tell "no opinion" from "no".
+    bool IsDeathChest(ObjectGuid guid, DeathChest* out = nullptr)
+    {
+        std::lock_guard<std::mutex> lock(chestMutex);
+        auto chest = chests.find(guid);
+        if (chest == chests.end())
+            return false;
+
+        if (out)
+        {
+            out->id = chest->second.id;
+            out->owner = chest->second.owner;
+            out->ownerGroup = chest->second.ownerGroup;
+            out->victim = chest->second.victim;
+        }
+        return true;
+    }
+
+    bool MayOpenChest(Player const* player, DeathChest const& chest)
+    {
+        if (player->GetGUID() == chest.owner || player->GetGUID().GetCounter() == chest.victim)
+            return true;
+
+        if (chest.ownerGroup && player->GetGroup() && player->GetGroup()->GetGUID() == chest.ownerGroup)
+            return true;
+
+        return MadosaHardcorePvP::IsHighRisk(player);
     }
 
     // The order here is the safety: the contents are written to the table
@@ -1295,47 +1351,36 @@ public:
     // Careful with the polarity: CALL_ENABLED_BOOLEAN_HOOKS turns a `true` here
     // into a `false` at the call site, so returning true is what *denies* the
     // loot. Everything that is not one of our chests returns false, i.e. "no
-    // opinion".
-    //
-    // Who may open a death chest, and when:
-    //
-    //   at once   the killer, the killer's group, and the victim
-    //   after     anyone else who is in High-Risk themselves
-    //
-    // The victim was originally locked out for the first two minutes, and that
-    // was wrong in a way only playing showed: on a realm where the killer is
-    // almost always a bot that walks off without looting, the victim stood next
-    // to their own belongings unable to touch them until the chest crumbled.
-    // Their own things are theirs to race for.
-    //
-    // Everyone else has to be in High-Risk. A chest is what High-Risk players
-    // stake against each other; someone who risks nothing does not get to
-    // collect from it.
+    // opinion". The rule itself is MayOpenChest(), shared with the sparkle.
     bool OnAllowedToLootContainerCheck(Player const* player, ObjectGuid source) override
     {
-        ObjectGuid owner;
-        ObjectGuid ownerGroup;
-        ObjectGuid::LowType victim = 0;
-        {
-            std::lock_guard<std::mutex> lock(chestMutex);
-            auto chest = chests.find(source);
-            if (chest == chests.end())
-                return false;
-
-            owner = chest->second.owner;
-            ownerGroup = chest->second.ownerGroup;
-            victim = chest->second.victim;
-        }
-
-        if (player->GetGUID() == owner || player->GetGUID().GetCounter() == victim)
+        DeathChest chest;
+        if (!IsDeathChest(source, &chest))
             return false;
 
-        if (ownerGroup && player->GetGroup() && player->GetGroup()->GetGUID() == ownerGroup)
+        return !MayOpenChest(player, chest);
+    }
+};
+
+// The chest's own script, for one thing only: the sparkle. The client draws
+// the quest glitter on a gameobject when the server flags it activatable for
+// that player, and the core decides that from the quest log - which knows
+// nothing about a chest full of somebody's bags. This answers the question
+// instead, with the same rule the loot check uses, so the chest glitters for
+// exactly the people who may open it and for nobody else. It is the one core
+// hook this feature needed: GameObjectScript::OnActivateToQuest.
+class go_madosa_death_chest : public GameObjectScript
+{
+public:
+    go_madosa_death_chest() : GameObjectScript("go_madosa_death_chest") { }
+
+    bool OnActivateToQuest(Player* player, GameObject const* go) override
+    {
+        DeathChest chest;
+        if (!IsDeathChest(go->GetGUID(), &chest))
             return false;
 
-        // Not one of the three, so it comes down to whether they are playing for
-        // the same stakes.
-        return !MadosaHardcorePvP::IsHighRisk(player);
+        return MayOpenChest(player, chest);
     }
 };
 
@@ -1620,6 +1665,7 @@ void AddSC_madosa_hardcore_pvp()
 {
     new mod_madosa_hardcore_pvp_player();
     new mod_madosa_hardcore_pvp_global();
+    new go_madosa_death_chest();
     new mod_madosa_hardcore_pvp_support();
     new mod_madosa_hardcore_pvp_world();
     new npc_madosa_hardcore_herald();

@@ -383,7 +383,12 @@ are substantial enough to stand on their own).
   Hearthstone, conjured items and heirlooms never do. The killer, their
   group and the victim may open the chest at once - the victim's own things are
   theirs to race for - and anyone else only if they are in High-Risk
-  themselves. It is gone after five minutes.
+  themselves. It is gone after five minutes. The chest sparkles - the same
+  glitter a quest object has - for exactly the people who may open it, and
+  for nobody else. That is the one core change this feature carries:
+  `GameObjectScript::OnActivateToQuest` (`src/server/game/Scripting/`), a
+  hook that lets a gameobject's script answer the "show this as activatable"
+  question the core otherwise asks the quest log.
 
   **Nothing is lost to a chest nobody opened.** Every dropped stack - and the
   gold of an insurance chest - is written to `character_hardcore_pvp_chest`

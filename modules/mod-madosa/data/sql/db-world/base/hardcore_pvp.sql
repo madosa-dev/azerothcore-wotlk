@@ -84,6 +84,11 @@ INSERT INTO `npc_text` (`ID`,`text0_0`,`text0_1`,`lang0`,`Probability0`) VALUES
 -- the only way to be sure an emptied chest does not stand there for the rest
 -- of the uptime. Data15 (groupLootRules) stays 0 as well: who may open it and
 -- when is decided in C++, not by the group loot method.
+--
+-- The ScriptName is what makes it sparkle: go_madosa_death_chest answers the
+-- core's "is this activatable for that player" question (normally a quest-log
+-- matter) with the chest's own loot rule, so the glitter shows to exactly the
+-- people who may open it.
 DELETE FROM `gameobject_template` WHERE `entry` = 900402;
 INSERT INTO `gameobject_template`
   (`entry`,`type`,`displayId`,`name`,`IconName`,`castBarCaption`,`unk1`,`size`,
@@ -93,4 +98,4 @@ INSERT INTO `gameobject_template`
 (900402,3,5743,'Spoils of the Fallen','LootAll','','',1,
  0,0,0,0,0,0,0,0,0,0,0,0,
  0,0,0,0,0,0,0,0,0,0,0,0,
- '','');
+ '','go_madosa_death_chest');
