@@ -284,9 +284,14 @@ public:
 
         // Trim by id rather than by age: what matters is that the table stays a
         // readable length, not how long ago the oldest line was.
+        //
+        // Signed on purpose: id is BIGINT UNSIGNED, and until the table holds
+        // more than CHRONICLE_MAX_ROWS lines MAX(id) - N is negative - which
+        // an unsigned subtraction reports as "out of range" (errno 1690)
+        // instead of matching nothing.
         CharacterDatabase.Execute(
             "DELETE FROM live_chronicle WHERE id <= "
-            "(SELECT * FROM (SELECT MAX(id) - {} FROM live_chronicle) AS keep)",
+            "(SELECT * FROM (SELECT CAST(IFNULL(MAX(id), 0) AS SIGNED) - {} FROM live_chronicle) AS keep)",
             CHRONICLE_MAX_ROWS);
     }
 };
