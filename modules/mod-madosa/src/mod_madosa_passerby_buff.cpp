@@ -42,6 +42,7 @@
 #include "SpellMgr.h"
 #include "Util.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <list>
@@ -51,10 +52,22 @@ namespace
 {
     constexpr uint32 SCAN_INTERVAL_MS = 5000;
 
+    // "Rank 4" -> 4. Ranks live in their own spell field, separate from the
+    // name, and a buff without one (a single-rank spell) counts as rank 0.
+    int RankOf(SpellInfo const* spellInfo)
+    {
+        char const* rankText = spellInfo ? spellInfo->Rank[LOCALE_enUS] : nullptr;
+        if (!rankText)
+            return 0;
+
+        size_t digitStart = strcspn(rankText, "0123456789");
+        return rankText[digitStart] ? std::atoi(rankText + digitStart) : 0;
+    }
+
     // Finds the highest rank of `name` the bot currently has in its own spellbook
     // (mirrors mod-playerbots' own by-name spell resolution: a bot only ever
     // offers a buff rank it actually knows for its current level).
-    uint32 ResolveHighestKnownSpellByName(Player* bot, char const* name)
+    uint32 ResolveHighestKnownSpellByName(Player* bot, char const* name, int* outRank = nullptr)
     {
         uint32 highestSpellId = 0;
         int highestRank = -1;
@@ -72,10 +85,7 @@ namespace
             if (!spellName || !StringEqualI(spellName, name))
                 continue;
 
-            char const* rankText = spellInfo->Rank[LOCALE_enUS];
-            size_t digitStart = rankText ? strcspn(rankText, "0123456789") : 0;
-            int rank = (rankText && rankText[digitStart]) ? std::atoi(rankText + digitStart) : 0;
-
+            int const rank = RankOf(spellInfo);
             if (rank >= highestRank)
             {
                 highestRank = rank;
@@ -83,15 +93,107 @@ namespace
             }
         }
 
+        if (outRank)
+            *outRank = highestRank;
+
         return highestSpellId;
+    }
+
+    // The group-cast version of each buff. It applies the same thing under a
+    // different name and a different rank chain, so a player carrying one must
+    // not be offered the single-target version on top of it.
+    char const* GroupVersionOf(char const* name)
+    {
+        struct Pair { char const* single; char const* group; };
+        static Pair const pairs[] = {
+            { "Power Word: Fortitude", "Prayer of Fortitude" },
+            { "Divine Spirit",         "Prayer of Spirit"    },
+            { "Arcane Intellect",      "Arcane Brilliance"   },
+            { "Mark of the Wild",      "Gift of the Wild"    },
+            { "Blessing of Kings",     "Greater Blessing of Kings"  },
+            { "Blessing of Wisdom",    "Greater Blessing of Wisdom" },
+            { "Blessing of Might",     "Greater Blessing of Might"  },
+        };
+
+        for (Pair const& pair : pairs)
+            if (StringEqualI(pair.single, name))
+                return pair.group;
+
+        return nullptr;
+    }
+
+    // Does the target already carry this buff, at *any* rank and from anyone?
+    //
+    // Comparing spell ids was the bug: every rank of a buff is its own spell id,
+    // so a bot that knows rank 4 never saw the rank 7 already on the player -
+    // it cast rank 4, which overwrote rank 7, and on the next scan the bot that
+    // knows rank 7 saw its own rank missing and cast it back. Two bots of
+    // different levels would trade a buff back and forth every five seconds
+    // forever, which is exactly what this looked like from the receiving end.
+    //
+    // Ranks share one spell *name* (the rank lives in a separate field), so
+    // comparing names covers every rank at once and needs no chain lookups.
+    // Returns the rank already on the target, or -1 for "not buffed at all".
+    // The group version counts as unbeatable: it is at least as good as any
+    // single-target rank, so replacing it would be a downgrade.
+    constexpr int RANK_GROUP_VERSION = 1000;
+
+    int PresentBuffRank(Unit const* target, char const* name)
+    {
+        char const* group = GroupVersionOf(name);
+        int best = -1;
+
+        for (auto const& [spellId, application] : target->GetAppliedAuras())
+        {
+            if (!application)
+                continue;
+
+            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+            if (!spellInfo)
+                continue;
+
+            char const* auraName = spellInfo->SpellName[LOCALE_enUS];
+            if (!auraName)
+                continue;
+
+            if (group && StringEqualI(auraName, group))
+                return RANK_GROUP_VERSION;
+
+            if (StringEqualI(auraName, name))
+                best = std::max(best, RankOf(spellInfo));
+        }
+
+        return best;
+    }
+
+    bool TargetAlreadyHasBuff(Unit const* target, char const* name)
+    {
+        return PresentBuffRank(target, name) >= 0;
     }
 
     // Casts the bot's own best-known rank of `name` on target if it doesn't already
     // have it. Returns true only once a cast was actually attempted.
     bool TryCastKnownBuff(Player* bot, Player* target, char const* name)
     {
-        uint32 spellId = ResolveHighestKnownSpellByName(bot, name);
-        if (!spellId || target->HasAura(spellId) || bot->HasSpellCooldown(spellId))
+        // Checked before resolving the bot's own spell, and that order matters:
+        // reading the target's aura list is a few dozen comparisons, while
+        // ResolveHighestKnownSpellByName walks the bot's entire spellbook. The
+        // common case by far is "already buffed", so the cheap test goes first.
+        int const present = PresentBuffRank(target, name);
+        if (present >= RANK_GROUP_VERSION)
+            return false;
+
+        int botRank = -1;
+        uint32 spellId = ResolveHighestKnownSpellByName(bot, name, &botRank);
+        if (!spellId || bot->HasSpellCooldown(spellId))
+            return false;
+
+        // Strictly better only. A buff already there is left alone unless this
+        // bot knows a higher rank - which stops the constant re-casting and
+        // still lets a passing level 70 upgrade what a level 20 handed out.
+        // Because the rank can only ever go up, this terminates; the old
+        // "is my own exact spell id missing?" test never could.
+        if (botRank <= present)
             return false;
 
         bot->CastSpell(target, spellId, false);
@@ -134,14 +236,8 @@ namespace
                 };
 
                 for (Blessing const& blessing : blessings)
-                {
-                    if (!blessing.enabled)
-                        continue;
-
-                    uint32 spellId = ResolveHighestKnownSpellByName(bot, blessing.name);
-                    if (spellId && target->HasAura(spellId))
+                    if (blessing.enabled && TargetAlreadyHasBuff(target, blessing.name))
                         return; // already blessed with an enabled blessing - leave it alone
-                }
 
                 for (Blessing const& blessing : blessings)
                     if (blessing.enabled && TryCastKnownBuff(bot, target, blessing.name))
