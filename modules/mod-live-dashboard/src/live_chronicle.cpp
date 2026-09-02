@@ -100,20 +100,14 @@ namespace
         return name ? name : "";
     }
 
-    // Single-quote is the only character that can break the statement, and the
-    // rest of this module builds SQL the same way.
+    // Trimmed to the column first, escaped second - the other way round could
+    // cut an escape sequence in half.
     std::string Escape(std::string value)
     {
-        size_t pos = 0;
-        while ((pos = value.find('\'', pos)) != std::string::npos)
-        {
-            value.insert(pos, 1, '\\');
-            pos += 2;
-        }
-
         if (value.size() > 250)
             value.resize(250);
 
+        CharacterDatabase.EscapeString(value);
         return value;
     }
 }

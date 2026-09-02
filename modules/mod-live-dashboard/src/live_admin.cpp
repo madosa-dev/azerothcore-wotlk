@@ -35,19 +35,21 @@
 
 #include "CharacterDatabase.h"
 #include "Chat.h"
+#include "DatabaseEnv.h"
 #include "GameTime.h"
 #include "Log.h"
+#include "QueryCallback.h"
 #include "ScriptMgr.h"
+#include "StringFormat.h"
 
 #include <string>
 #include <vector>
 
 namespace
 {
-    // Every poll is a synchronous database round-trip on the world thread, so
-    // the interval is a direct trade against how long a dashboard button takes
-    // to answer. Two seconds is imperceptible on a button and halves a cost the
-    // world tick pays whether anyone is using the panel or not.
+    // The poll runs on the database thread (see live_admin_world), so the
+    // interval is about how long a dashboard button takes to answer, not about
+    // what the world tick pays. Two seconds is imperceptible on a button.
     constexpr uint32 ADMIN_POLL_INTERVAL_MS = 2000;
 
     // One command per tick at most. A dashboard button is not a batch job, and
@@ -95,22 +97,8 @@ namespace
         return value;
     }
 
-    void RunPending()
+    void RunQueued(std::vector<std::pair<uint64, std::string>> const& queued)
     {
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT id, command FROM live_dashboard_commands WHERE status = 'pending' ORDER BY id LIMIT {}",
-            MAX_COMMANDS_PER_TICK);
-
-        if (!result)
-            return;
-
-        std::vector<std::pair<uint64, std::string>> queued;
-        do
-        {
-            Field* fields = result->Fetch();
-            queued.emplace_back(fields[0].Get<uint64>(), fields[1].Get<std::string>());
-        } while (result->NextRow());
-
         for (auto const& [id, command] : queued)
         {
             std::string output;
@@ -145,21 +133,54 @@ namespace
     }
 }
 
+// The poll is asynchronous: the SELECT goes to the database thread and its
+// answer is picked up on a later tick. A synchronous query here would have
+// cost the world thread a round-trip to MySQL every two seconds whether or not
+// anyone was using the panel - small, but paid on every tick of a realm that
+// is already spending most of its budget on bots. The commands themselves
+// still run on the world thread, which is where CliHandler expects to be.
 class live_admin_world : public WorldScript
 {
     uint32 _timer = 0;
+    bool _inFlight = false;
+    QueryCallbackProcessor _queries;
 
 public:
     live_admin_world() : WorldScript("live_admin_world") { }
 
     void OnUpdate(uint32 diff) override
     {
+        _queries.ProcessReadyCallbacks();
+
         _timer += diff;
         if (_timer < ADMIN_POLL_INTERVAL_MS)
             return;
 
         _timer = 0;
-        RunPending();
+
+        // One poll at a time: a slow database answering late must not stack a
+        // second SELECT on top of the first.
+        if (_inFlight)
+            return;
+
+        _inFlight = true;
+        _queries.AddCallback(CharacterDatabase.AsyncQuery(Acore::StringFormat(
+            "SELECT id, command FROM live_dashboard_commands WHERE status = 'pending' ORDER BY id LIMIT {}",
+            MAX_COMMANDS_PER_TICK)).WithCallback([this](QueryResult result)
+        {
+            _inFlight = false;
+            if (!result)
+                return;
+
+            std::vector<std::pair<uint64, std::string>> queued;
+            do
+            {
+                Field* fields = result->Fetch();
+                queued.emplace_back(fields[0].Get<uint64>(), fields[1].Get<std::string>());
+            } while (result->NextRow());
+
+            RunQueued(queued);
+        }));
     }
 };
 

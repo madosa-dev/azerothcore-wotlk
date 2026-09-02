@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { usePolling } from '../hooks/usePolling'
-import { KINDS, CLASS_COLORS, CLASS_NAMES, kindMeta, describe, timeAgo } from '../chronicle'
+import { CLASS_COLORS, CLASS_NAMES, kindMeta, describe, timeAgo } from '../chronicle'
 
 function Name({ part }) {
   const color = part.bot ? 'var(--bot)' : (CLASS_COLORS[part.cls] || 'var(--player)')
@@ -59,10 +59,7 @@ export default function Chronicle() {
 
   // Only offer chips for kinds the realm has actually produced - an empty
   // filter is a dead end and this realm's mix changes as features are added.
-  const chips = useMemo(() => {
-    const seen = summary?.kinds?.map(k => k.kind) ?? []
-    return seen.filter(k => k in KINDS || true)
-  }, [summary])
+  const chips = useMemo(() => summary?.kinds?.map(k => k.kind) ?? [], [summary])
 
   const today = summary?.kinds?.reduce((n, k) => n + k.today, 0) ?? 0
 
