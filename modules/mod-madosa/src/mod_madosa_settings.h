@@ -34,10 +34,22 @@ namespace MadosaSettings
     // data/sql/db-auth/base/madosa_settings_rbac.sql.
     constexpr uint32 RBAC_PERM_COMMAND_MADOSA = 1001;
 
+    // Everything MadosaControl needs to render one row without knowing a thing
+    // about the setting itself: which widget (type), what it may be set to
+    // (min/max), which panel it belongs on (group) and what to call it.
+    // Keeping this here rather than in the addon means a new setting shows up
+    // in the panel, correctly labelled and correctly bounded, with no client
+    // change at all.
     struct SettingInfo
     {
         std::string key;
         std::string value;
+        std::string type;    // "bool", "int" or "float"
+        std::string min;
+        std::string max;
+        std::string group;   // display name of the panel it belongs on
+        std::string label;
+        std::string help;
     };
 
     void Init();
@@ -71,6 +83,24 @@ namespace MadosaSettings
     uint32 GetWorldforgedRareChance();
     uint32 GetWorldforgedGoldPerLevel();
     bool GetWorldforgedAscensionEnable();
+    bool GetHardcorePvPEnable();
+    uint32 GetHardcorePvPXPPercent();
+    uint32 GetHardcorePvPMinLevel();
+    uint32 GetHardcorePvPToggleCooldown();
+    bool GetHardcorePvPWarModeEnable();
+    uint32 GetHardcorePvPWarModeXPPercent();
+    bool GetHardcorePvPInsuranceEnable();
+    uint32 GetHardcorePvPInsuranceCost();
+    uint32 GetHardcorePvPBountyChance();
+    bool GetHardcorePvPTraitorEnable();
+    bool GetHardcorePvPTraitorGuardsHostile();
+    uint32 GetHardcorePvPDropPercent();
+    uint32 GetHardcorePvPDropMaxItems();
+    uint32 GetHardcorePvPChestLifetime();
+    uint32 GetHardcorePvPRepeatKillCooldown();
+    float GetHardcorePvPDungeonDropChance();
+    bool GetHardcorePvPDungeonDropGreyMobs();
+    uint32 GetHardcorePvPBotParticipation();
 
     // Parses and applies value for key, persisting it to the DB override
     // table. Returns false (and fills outError) if key is unknown or value

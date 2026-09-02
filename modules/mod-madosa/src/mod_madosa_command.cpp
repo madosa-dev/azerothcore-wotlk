@@ -19,6 +19,7 @@
 // same read/write path the addon bridge (mod_madosa_addon_bridge.cpp) uses,
 // so typing these by hand and driving them from the addon are equivalent.
 
+#include "mod_madosa_hardcore_pvp.h"
 #include "mod_madosa_settings.h"
 #include "mod_madosa_worldforged.h"
 
@@ -36,22 +37,130 @@ public:
     {
         static ChatCommandTable worldforgedCommandTable =
         {
-            { "status", HandleWorldforgedStatusCommand, MadosaSettings::RBAC_PERM_COMMAND_MADOSA, Console::No },
+            { "status", HandleWorldforgedStatusCommand, MadosaSettings::RBAC_PERM_COMMAND_MADOSA, Console::Yes },
             { "spawn",  HandleWorldforgedSpawnCommand,  MadosaSettings::RBAC_PERM_COMMAND_MADOSA, Console::No },
             { "clear",  HandleWorldforgedClearCommand,  MadosaSettings::RBAC_PERM_COMMAND_MADOSA, Console::No },
         };
         static ChatCommandTable madosaCommandTable =
         {
-            { "status",      HandleMadosaStatusCommand, MadosaSettings::RBAC_PERM_COMMAND_MADOSA, Console::No },
-            { "set",         HandleMadosaSetCommand,    MadosaSettings::RBAC_PERM_COMMAND_MADOSA, Console::No },
-            { "reset",       HandleMadosaResetCommand,  MadosaSettings::RBAC_PERM_COMMAND_MADOSA, Console::No },
+            // Console-capable, and they have to be: these read and write
+            // realm-wide settings and need no player behind them. Leaving them
+            // player-only meant the server console and the dashboard's admin
+            // panel got a usage message instead of a result - which quietly
+            // invalidated a performance measurement taken through the panel
+            // before anyone noticed the setting had never changed.
+            { "status",      HandleMadosaStatusCommand,   MadosaSettings::RBAC_PERM_COMMAND_MADOSA, Console::Yes },
+            { "set",         HandleMadosaSetCommand,      MadosaSettings::RBAC_PERM_COMMAND_MADOSA, Console::Yes },
+            { "reset",       HandleMadosaResetCommand,    MadosaSettings::RBAC_PERM_COMMAND_MADOSA, Console::Yes },
+            { "hardcore",    HandleMadosaHardcoreCommand, MadosaSettings::RBAC_PERM_COMMAND_MADOSA, Console::Yes },
             { "worldforged", worldforgedCommandTable },
+        };
+        // The one player-facing command in this module: it does exactly what
+        // the Hardcore Herald does, under exactly the same rules, for people
+        // who would rather not walk to the NPC. Hence its own permission,
+        // linked to the player role (hardcore_pvp_rbac.sql).
+        static ChatCommandTable traitorCommandTable =
+        {
+            { "on",  HandleTraitorOnCommand,  MadosaHardcorePvP::RBAC_PERM_COMMAND_HARDCORE, Console::No },
+            { "off", HandleTraitorOffCommand, MadosaHardcorePvP::RBAC_PERM_COMMAND_HARDCORE, Console::No },
+        };
+        // "on"/"off" are kept as the names players already learned, now meaning
+        // the two ends of the three-mode ladder.
+        static ChatCommandTable hardcoreCommandTable =
+        {
+            { "",        HandleHardcoreStatusCommand, MadosaHardcorePvP::RBAC_PERM_COMMAND_HARDCORE, Console::No },
+            { "pve",     HandleModePvECommand,        MadosaHardcorePvP::RBAC_PERM_COMMAND_HARDCORE, Console::No },
+            { "war",     HandleModeWarCommand,        MadosaHardcorePvP::RBAC_PERM_COMMAND_HARDCORE, Console::No },
+            { "high",    HandleModeHighCommand,       MadosaHardcorePvP::RBAC_PERM_COMMAND_HARDCORE, Console::No },
+            { "on",      HandleModeHighCommand,       MadosaHardcorePvP::RBAC_PERM_COMMAND_HARDCORE, Console::No },
+            { "off",     HandleModePvECommand,        MadosaHardcorePvP::RBAC_PERM_COMMAND_HARDCORE, Console::No },
+            { "insure",  HandleInsureCommand,         MadosaHardcorePvP::RBAC_PERM_COMMAND_HARDCORE, Console::No },
+            { "traitor", traitorCommandTable },
         };
         static ChatCommandTable commandTable =
         {
-            { "madosa", madosaCommandTable },
+            { "madosa",   madosaCommandTable },
+            { "hardcore", hardcoreCommandTable },
         };
         return commandTable;
+    }
+
+    static bool HandleMadosaHardcoreCommand(ChatHandler* handler)
+    {
+        for (std::string const& line : MadosaHardcorePvP::Status())
+            handler->PSendSysMessage("{}", line);
+        return true;
+    }
+
+    // Both toggles answer the same way: the mode function owns every rule and
+    // returns the sentence to show when it says no, so the command has no
+    // opinion of its own to drift out of sync with the Herald's.
+    static bool SwitchMode(ChatHandler* handler, MadosaHardcorePvP::RiskMode mode)
+    {
+        Player* player = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+        if (!player)
+            return false;
+
+        std::string error;
+        if (MadosaHardcorePvP::SetMode(player, mode, error))
+            handler->PSendSysMessage("You are now in {}.", MadosaHardcorePvP::ModeName(mode));
+        else
+            handler->PSendSysMessage("{}", error);
+        return true;
+    }
+
+    static bool Toggle(ChatHandler* handler, bool enable)
+    {
+        Player* player = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+        if (!player)
+            return false;
+
+        std::string error;
+        if (!MadosaHardcorePvP::SetTraitor(player, enable, error))
+        {
+            handler->PSendSysMessage("{}", error);
+            return true;
+        }
+
+        handler->PSendSysMessage(enable
+            ? "You have betrayed your faction. Other traitors are fair game now - and your own cities are not yours."
+            : "Your treason is forgiven.");
+        return true;
+    }
+
+    static bool HandleInsureCommand(ChatHandler* handler)
+    {
+        Player* player = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+        if (!player)
+            return false;
+
+        std::string error;
+        if (MadosaHardcorePvP::BuyInsurance(player, error))
+            handler->PSendSysMessage("Insured. One death is covered - the killer finds your premium in gold "
+                "where your belongings would have been.");
+        else
+            handler->PSendSysMessage("{}", error);
+        return true;
+    }
+
+    static bool HandleModePvECommand(ChatHandler* handler) { return SwitchMode(handler, MadosaHardcorePvP::RISK_MODE_PVE); }
+    static bool HandleModeWarCommand(ChatHandler* handler) { return SwitchMode(handler, MadosaHardcorePvP::RISK_MODE_WAR); }
+    static bool HandleModeHighCommand(ChatHandler* handler) { return SwitchMode(handler, MadosaHardcorePvP::RISK_MODE_HIGH); }
+    static bool HandleTraitorOnCommand(ChatHandler* handler) { return Toggle(handler, true); }
+    static bool HandleTraitorOffCommand(ChatHandler* handler) { return Toggle(handler, false); }
+
+    static bool HandleHardcoreStatusCommand(ChatHandler* handler)
+    {
+        Player* player = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+        if (!player)
+            return false;
+
+        handler->PSendSysMessage("Risk mode: {}", MadosaHardcorePvP::ModeName(MadosaHardcorePvP::GetMode(player)));
+        handler->PSendSysMessage("Traitor: {}", MadosaHardcorePvP::IsTraitor(player) ? "yes" : "no");
+        handler->PSendSysMessage("Insured: {}", MadosaHardcorePvP::IsInsured(player) ? "yes, one death covered" : "no");
+        handler->PSendSysMessage("Change with \".hardcore pve|war|high\" or \".hardcore traitor on|off\", "
+            "in an inn or a city - or talk to a Hardcore Herald.");
+        return true;
     }
 
     static bool HandleMadosaStatusCommand(ChatHandler* handler)

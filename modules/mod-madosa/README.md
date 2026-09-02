@@ -364,6 +364,231 @@ are substantial enough to stand on their own).
   afterwards, which is the check worth repeating) - and that also means **run it
   after `clientpatch/build_patches.py`, never before**.
 
+- **`hardcore_pvp.sql` + `src/mod_madosa_hardcore_pvp.cpp` +
+  `src/mod_madosa_hardcore_pvp_loot.cpp`**: **Hardcore PvP**, after Ascension
+  WoW's mode of the same name. Opt in and you earn 10% more experience, ordinary
+  world mobs start dropping dungeon and raid gear, and being killed by another
+  Hardcore player leaves a chest holding part of what your bags held. Switched
+  on and off at a **Hardcore Herald** - one in every capital and every neutral
+  town - or with `.hardcore on|off`, in any inn or city, out of combat, on a
+  30-minute cooldown so it cannot be dropped the moment it stops being
+  convenient.
+
+  **The chest needs both sides.** It only ever drops when killer *and* victim
+  are in Hardcore PvP - never off a bystander, never onto one. That is why each
+  mode wears a visible aura: the mark is not decoration, it is how a killer can
+  tell beforehand whether a target is carrying anything, and how a Hardcore
+  player knows they are fair game. Everything in the bags can drop, soulbound
+  included; worn equipment, quest items, the bags themselves, keys, the
+  Hearthstone, conjured items and heirlooms never do. The killer and their
+  group have the chest for two minutes, then it is free for all - the victim
+  can run back for what is left - and it is gone after five.
+
+  **Nothing is lost to a chest nobody opened.** Every dropped stack is written
+  to `character_hardcore_pvp_chest` before the chest is even visible, removed
+  again as it is looted, and whatever is left when the chest crumbles is mailed
+  back to the victim. Leftover rows are mailed back at the next startup, which
+  covers a crash as well as a clean restart.
+
+  This was found the hard way and is worth stating plainly: the first version
+  kept a chest's contents in memory only and gave the killer two minutes of
+  exclusivity. On a realm where the killer is almost always a bot that walks
+  away without looting, the outcome was that the victim's belongings were
+  destroyed, the victim was locked out of them, and then they ceased to exist
+  when the chest expired. The victim lost and nobody won - the worst outcome the
+  design allowed, and it happened on the first real death.
+
+  **Who may open it**: the killer, the killer's group and the victim, all at
+  once - your own things are yours to race for. Everyone else must be in
+  High-Risk themselves, because a chest is what High-Risk players stake against
+  each other and someone risking nothing does not get to collect from it.
+
+  **The chest is a chest with no loot table.** `Player::SendLoot()` only calls
+  `loot->clear()` and `FillLoot()` inside `if (lootid)` (`Player.cpp:8029`), so
+  a `gameobject_template` without one keeps whatever the server put in it by
+  hand - which is how the victim's own belongings, with their own random
+  properties, arrive in an ordinary loot window. Enchantments cannot be
+  expressed as loot at all, so they are recorded when the item is taken and put
+  back in `OnPlayerLootItem`, which hands us the freshly created `Item`.
+  Durability and charges are not preserved; loot has no way to say them.
+
+  **Three risk modes, Ascension's own three.** A character is in exactly one,
+  chosen at the Herald or with `.hardcore pve|war|high`:
+
+  | Mode | Ascension | Flagged | Bonus XP | World dungeon drops | Bags at stake |
+  |---|---|---|---|---|---|
+  | PvE | `PvE Mode` (84422) | no | - | no | no |
+  | War Mode | `War Mode` (84420) | permanently | yes, the smaller rate | no | no |
+  | High-Risk | `High-Risk (PvP)` (84421) | permanently | yes, the larger rate | yes | yes |
+
+  PvE is not merely "not opted in", it carries Ascension's own rule: *"You
+  cannot heal or buff players in War Mode or High-Risk while in the open
+  world."* Without it a PvE character is a pocket healer who can never be
+  punished for it - all of the support, none of the exposure. This core has no
+  hook that can refuse a helpful cast before it happens, and patching
+  `Unit::_IsValidAssistTarget` would mean core code to re-merge forever - the
+  same trade refused for the traitor rule - so the cast goes off and then does
+  nothing: the heal is zeroed (`UnitScript::ModifyHealReceived`) and the buff is
+  expired on its next tick (`OnAuraApply` + `SetDuration(0)`). The caster still
+  pays the mana and the global cooldown, which is the feedback. One acknowledged
+  gap: an aura with no duration cannot be expired that way, though every class
+  buff in 3.3.5a has one.
+
+  Watch the parameter names on that heal hook. `Unit.cpp:8409` calls it as
+  `ModifyHealReceived(this, healInfo.GetTarget(), ...)` from
+  `Unit::HealBySpell`, which callers invoke as `caster->HealBySpell(...)` - so
+  the argument the hook *declares* as "target" is the healer. Taking the names
+  at face value points the rule the wrong way round.
+
+  Treason needs War Mode or High-Risk: it opens same-faction fighting, and a
+  PvE character cannot fight at all. Dropping back to PvE renounces it in the
+  same breath.
+
+  **The realm is PvE; the mode is how you opt out of that.** `GameType = 0`,
+  so nobody is flagged against their will and PvP is something a player asks
+  for - the same shape as Ascension, which is PvE by default with War Mode and
+  High-Risk as opt-ins. A hardcore character is permanently flagged and can be
+  fought by anyone else who is flagged, however they got that way (`/pvp`
+  included); the chest is the part reserved for two hardcore players.
+
+  That permanence needs `PLAYER_FLAGS_IN_PVP`, not just `UpdatePvP(true, true)`.
+  `Player::UpdatePvPState()` starts the five-minute unflag timer for any flagged
+  player in friendly territory that lacks it (`PlayerUpdates.cpp:1459`) - it is
+  what the `/pvp` toggle sets to mean "leave me flagged". Without it a hardcore
+  character quietly stops being attackable a few minutes after walking into
+  their own capital, keeping every cost of the mode and none of its risk. On a
+  PvP realm that is easy to miss, because contested territory keeps re-flagging
+  them; on a PvE realm it would be true everywhere.
+
+  **Treason is a second, separate switch.** "Traitor to the Alliance" / "Traitor
+  to the Horde" is what enables same-faction PvP; Hardcore on its own never
+  does. It is the core's own FFA flag, what Gurubashi Arena uses:
+  `Unit::GetReactionTo()` returns `REP_HOSTILE` when **both** sides carry it
+  (`Unit.cpp:7174`), so traitors are hostile to each other and to nobody else -
+  a loyal player still cannot swing at one. That symmetry is deliberate, and it
+  is also why no core file is touched: making it one-sided would mean patching
+  `Unit::_IsValidAttackTarget()`, since this core has no attack-target hook.
+
+  Two things about that flag are worth knowing, because both look like bugs:
+  - **The core clears it on every area change.** `UpdateFFAPvPState()`
+    (`PlayerUpdates.cpp:1465`) removes it from anyone not standing in an
+    `AREA_FLAG_ARENA` area, and `UpdateArea()` calls that *after* the
+    `OnPlayerUpdateArea` hook, so a script cannot get its answer in first.
+    Rather than fight it, a traitor is marked as being in an FFA area
+    (`pvpInfo.IsInFFAPvPArea`) and that is re-asserted from the world tick,
+    letting the core's own code set the flag. Sanctuaries keep their protection
+    for free, because `UpdateFFAPvPState()` checks `IsInNoPvPArea` first.
+  - **Treason costs you the city, not just its guards.** The price is
+    `ReputationMgr::ApplyForceReaction(cityFaction, REP_HOSTILE, true)` - the
+    core's own temporary-reaction mechanism, read back in the very same
+    `GetReactionTo()` path (`Unit.cpp:7147`), leaving real reputation values
+    untouched so switching off restores the character exactly. But a
+    forced-hostile city faction is the whole faction: its vendors, flight
+    masters and quest givers refuse you too. Which is why the Herald is
+    faction-neutral (faction 35) and also stands in Booty Bay, Gadgetzan,
+    Everlook, Ratchet, Shattrath and Dalaran - the NPC that takes the flag back
+    off must not be behind the guards that flag just turned on you.
+
+  **You can see which tier you are pulling from.** While the mode is on the
+  player wears a second aura naming their current level band and the dungeons
+  it covers - "Dungeon Spoils: Levels 40-49 ... Zul'Farrak, Maraudon and the
+  Sunken Temple" - and it moves on as they level. The band is not a label
+  painted over the drop logic: `LOOT_BANDS` in
+  `mod_madosa_hardcore_pvp_loot.cpp` *is* the selection rule (items whose
+  required level falls in the band, capped at what the player can equip today),
+  and `tools/clientpatch/build_patches.py` builds spells 900010-900017 from the
+  same boundaries. A tooltip here cannot drift away from what the roll does.
+  Crossing into a new band narrows the pool to its first level for a while -
+  that is the band change being felt, and even the thinnest band opens with
+  around 64 items in this database.
+
+  **Two more things carried over from Ascension's High-Risk**, both read out of
+  its own client rather than guessed at:
+
+  - **Gear insurance.** 84421 promises *"you drop equipped gear, **or Fel Com
+    gold if your gear is insured**"*. Here a High-Risk character buys cover at
+    the Herald (or with `.hardcore insure`) for
+    `Madosa.HardcorePvP.InsuranceCostGold`; the next High-Risk player to kill
+    them finds that gold in the chest instead of their bags, and the cover is
+    spent. Nothing is minted: the payout is the premium the victim already
+    handed over, changing hands. Dropping out of High-Risk drops the cover
+    rather than banking it, or it could be bought cheaply now and cashed in
+    much later.
+  - **Bounty.** Ascension's perk (83284-83286), *"You have a X% chance to double
+    a creature's gold."* Both flagged modes get it, hooked on
+    `OnPlayerBeforeLootMoney` and limited to creature purses -
+    `loot.sourceWorldObjectGUID` is a creature guid for a corpse
+    (`Creature.cpp:331`), so a chest or a fishing pool cannot pay a bounty. It
+    is the one reward War Mode has of its own, standing in for the extra
+    crafting materials Ascension gives it that this realm has no equivalent for.
+
+  **The world drops are not a hand-picked list.** At startup
+  `creature_loot_template` (and the reference table it points at) is joined
+  against where those creatures are actually spawned and checked against
+  Map.dbc through `sMapStore` - the same instance-resolution
+  `mod_madosa_instance_quest_pet.cpp` does for quests - so the pool is every
+  weapon and armour piece that drops inside a dungeon or raid, bucketed by
+  required level. Add a dungeon to the database and its loot is in the pool
+  after the next restart. The item is then chosen for the **looter's** level,
+  not the mob's, exactly like Worldforged: a level 24 character gets level 24
+  dungeon gear off a boar, and a find is always something they can equip. The
+  hook is `OnPlayerBeforeSendLoot` (`Player.cpp:8369`), the one place that runs
+  after the creature's own loot has been rolled and before the packet is built.
+
+  **Grey mobs are a setting, and the default is to allow them.** This started
+  out gated on `Player::isHonorOrXPTarget()`, which reads well - "a grey mob is
+  not a world worth finding things in" - and is far sharper than it sounds:
+  `GetGrayLevel(80)` is 71, so for a max-level character *every mob up to level
+  71* is worthless, which is most of the world outside Northrend. The drop
+  simply never happened, at any percentage. `hardcorepvp.dungeondrop.greymobs`
+  now decides it. The cost of leaving it on is real and worth stating: since the
+  reward is picked for the looter's level, mass-killing trivial mobs farms
+  current-tier gear, and the drop chance is the only throttle. Critters, totems,
+  pets and no-experience creatures never drop either way - those are scenery.
+
+  **Playerbots take part, deliberately and partially.**
+  `Madosa.HardcorePvP.BotParticipation` percent of them (10 by default, so ~300
+  of this realm's ~3000) run the mode, keyed off the bot's guid so a given bot
+  is consistently in or out rather than re-rolling every login. They wear the
+  same mark and drop from their bags like anyone else - without that, a realm
+  this thinly populated by real players would have nothing to hunt. Bots are
+  never traitors: treason changes who may attack whom, and 3000 bots deciding
+  that among themselves is a different realm from the one this is for.
+
+  **The marks are three new spells** (900002-900004), built by
+  `tools/clientpatch/build_patches.py` like the XP Boost aura, reusing icons
+  this client already has - `Spell_Shadow_Skull` and the two PvP banners. They
+  carry `NO_AURA_CANCEL`, because a player being able to right-click their own
+  status off would break the one rule the chest depends on. Until that patch is
+  rebuilt the mode works exactly as it does after; only the buff icon is
+  missing.
+
+  **What Ascension actually calls this**, since the point was to reproduce it:
+  its client's own Spell.dbc has **`High-Risk (PvP)` (84421)** - *"Any death
+  while in the open world with High-Risk Mode active will cause you to drop
+  equipped gear ... and items from your bag ... grants 15% increased experience
+  ... Can only be cast while in a rested area!"* - and the milder
+  **`War Mode (PvP)` (84420)**, open-world PvP and +10% experience with no gear
+  at stake. Ascension is PvE by default and you opt into one of the two. So this
+  module's Hardcore PvP is Ascension's High-Risk, the Traitor switch is the FFA
+  half of it, and the inn-or-city rule turns out to be Ascension's own wording.
+  War Mode has no counterpart here yet.
+
+  Two things looked for and *not* found in that client, so nobody hunts for them
+  again: there is no player-side aura naming a dungeon tier (the level bands
+  above are this module's own answer to the same idea), and Ascension's
+  open-world tier system is instead expressed on the *mob* - auras like
+  `Blood Bringer` (969036), *"This creature has a chance to drop Heroic Karazhan
+  Bloodforged Gear. Requires 111 item level"* - gated on item level rather than
+  character level.
+
+  GM command: `.madosa hardcore`. Player commands: `.hardcore`,
+  `.hardcore pve|war|high` (`on`/`off` kept as the names players already learned,
+  meaning the two ends of the ladder), `.hardcore insure`,
+  `.hardcore traitor on|off` (permission
+  1002, granted to the player role by
+  `data/sql/db-auth/base/hardcore_pvp_rbac.sql`).
+
 - **`tools/launcher/`**: a launcher, so the client patch can reach someone
   else's machine. `serve_patches.py` publishes a folder of patches over HTTP with
   a generated `manifest.json` (a path, size and SHA-256 per file);
@@ -427,8 +652,25 @@ read straight from the config file:
 | `worldforged.rarechance` | `Madosa.Worldforged.RareChance` | number, 0-100 |
 | `worldforged.goldperlevel` | `Madosa.Worldforged.GoldPerLevel` | number, 0-100000 |
 | `worldforged.ascension.enable` | `Madosa.Worldforged.Ascension.Enable` | on/off |
-| `worldforged.ascension.respawn` | `Madosa.Worldforged.Ascension.RespawnMinutes` | number, 1-10080 |
 | `passerbybuff.paladin.might.enable` | `Madosa.PasserbyBuff.Paladin.Might.Enable` | on/off |
+| `hardcorepvp.enable` | `Madosa.HardcorePvP.Enable` | on/off |
+| `hardcorepvp.xppercent` | `Madosa.HardcorePvP.XPPercent` | number, 0-100 |
+| `hardcorepvp.warmode.enable` | `Madosa.HardcorePvP.WarModeEnable` | on/off |
+| `hardcorepvp.warmode.xppercent` | `Madosa.HardcorePvP.WarModeXPPercent` | number, 0-100 |
+| `hardcorepvp.insurance.enable` | `Madosa.HardcorePvP.InsuranceEnable` | on/off |
+| `hardcorepvp.insurance.cost` | `Madosa.HardcorePvP.InsuranceCostGold` | number, 1-100000 |
+| `hardcorepvp.bountychance` | `Madosa.HardcorePvP.BountyChance` | number, 0-100 |
+| `hardcorepvp.minlevel` | `Madosa.HardcorePvP.MinLevel` | number, 1-80 |
+| `hardcorepvp.togglecooldown` | `Madosa.HardcorePvP.ToggleCooldownMinutes` | number, 0-1440 |
+| `hardcorepvp.traitor.enable` | `Madosa.HardcorePvP.TraitorEnable` | on/off |
+| `hardcorepvp.traitor.guardshostile` | `Madosa.HardcorePvP.TraitorGuardsHostile` | on/off |
+| `hardcorepvp.droppercent` | `Madosa.HardcorePvP.DropPercent` | number, 0-100 |
+| `hardcorepvp.dropmaxitems` | `Madosa.HardcorePvP.DropMaxItems` | number, 1-18 |
+| `hardcorepvp.chestlifetime` | `Madosa.HardcorePvP.ChestLifetimeMinutes` | number, 1-60 |
+| `hardcorepvp.repeatkillcooldown` | `Madosa.HardcorePvP.RepeatKillCooldownMinutes` | number, 0-1440 |
+| `hardcorepvp.dungeondropchance` | `Madosa.HardcorePvP.DungeonDropChance` | number, 0-100 |
+| `hardcorepvp.dungeondrop.greymobs` | `Madosa.HardcorePvP.DungeonDropGreyMobs` | on/off |
+| `hardcorepvp.botparticipation` | `Madosa.HardcorePvP.BotParticipation` | number, 0-100 |
 
 `Madosa.Addon.Enable` is deliberately absent: it gates the bridge MadosaControl
 talks through, so exposing it there would let the panel lock itself out. Change
@@ -453,31 +695,56 @@ permission (id 1001, granted to the "Gamemaster Commands" role by
 
 When adding a new tunable, wire it into `MadosaSettings` instead of reading
 `sConfigMgr` directly from the feature script, so it picks up the same
-live-control path automatically. A plain on/off toggle is one line in the
-`boolSettings` table in `src/mod_madosa_settings.cpp` - config key, storage
-slot and default - and a whole number whose only rule is a range is one line in
-the `uintSettings` table next to it, which adds the valid range and the wording
-of the error a GM sees. Everything else (startup seeding, DB overrides, set,
-reset, list) follows from either. Only a setting needing a check that is not a
-plain interval still deserves hand-written handling in `Set()`.
+live-control path automatically. **Every setting is one line in one of three
+tables** in `src/mod_madosa_settings.cpp` - `boolSettings`, `uintSettings` or
+`floatSettings` - giving its config key, storage slot, default and (for the
+numeric ones) the interval it may be set to. Startup seeding, DB overrides,
+`Set`, `Reset` and `List` all follow from that line; there is no per-setting
+code left anywhere.
 
-**Name on/off keys `<feature>.enable`.** MadosaControl picks its control type
-from that suffix, because guessing from the value would misread a numeric
-setting that happens to sit at 0 or 1 - `professionxp.percent` defaults to
-exactly `1`.
+A second line in `settingTexts` gives it a panel, a label and a sentence of
+explanation. That is what MadosaControl draws - so a new setting appears in
+the addon, in the right group, with the right widget and the right slider
+bounds, **with no client change at all**. Leave it out and the setting still
+works; it just turns up under "Other", labelled with its own key.
+
+**Name on/off keys `<feature>.enable`.** The list is sorted so a feature's
+settings arrive together with its master switch first, and that suffix is how
+the switch is recognised.
 
 ### MadosaControl addon
 
 `addon/MadosaControl` is a small, standalone WotLK 3.3.5a addon (`/madosa` or
-`/mc` to toggle) with checkboxes/edit boxes for each `MadosaSettings` value
-and an Apply/Refresh button. It **builds its rows from whatever the server
-sends**, so a setting added to `MadosaSettings` shows up without touching the
-addon. The only local knowledge is a label lookup, and an unknown key falls
-back to a label derived from the key itself. It talks to the server the same way every other
-WotLK GM-addon bridge does: a self-whisper (`SendAddonMessage(prefix, msg,
-"WHISPER", UnitName("player"))`) tagged `LANG_ADDON`, intercepted server-side
-in `PlayerScript::OnPlayerCanUseChat` before it would otherwise bounce back as
-a normal whisper. It is intentionally independent from the third-party
+`/mc` to toggle): categories down the left, the settings of the selected one on
+the right, Apply/Revert/Refresh along the bottom. Checkboxes for the toggles,
+a slider with an editable number for everything else.
+
+**It knows nothing about any individual setting.** Protocol 2 of the bridge
+sends each one fully described - widget type, bounds, group, label and help
+text - so the panel builds its category list and its rows out of whatever
+arrives. A setting added on the server shows up here correctly grouped,
+correctly bounded and correctly labelled without this addon being touched;
+one the server has never heard of cannot show up at all. The labels and the
+help text live in `settingTexts` in `src/mod_madosa_settings.cpp`, next to the
+settings they describe, rather than in a second list in Lua that could drift
+out of step with the first.
+
+The look is ElvUI's, without ElvUI: flat near-black panels, a hard one-pixel
+border with a one-pixel shadow frame behind it, one accent colour for anything
+carrying a value and greyscale for everything else. `Widgets.lua` is that whole
+idea - a `Panel` primitive plus the handful of controls built out of it -
+and `Core.lua` is the comms and the layout. No libraries and no media files:
+the only texture used is `WHITE8X8`, which the client already ships, so the
+addon stays two Lua files and a `.toc`. Changed-but-unapplied rows are marked
+in the accent colour and counted on the Apply button; Revert throws them away,
+and each row's "Default" button drops the DB override and returns that one
+setting to the conf file value.
+
+It talks to the server the same way every other WotLK GM-addon bridge does: a
+self-whisper (`SendAddonMessage(prefix, msg, "WHISPER", UnitName("player"))`)
+tagged `LANG_ADDON`, intercepted server-side in
+`PlayerScript::OnPlayerCanUseChat` before it would otherwise bounce back as a
+normal whisper. It is intentionally independent from the third-party
 `mod-homebrew-gm`/`HomebrewGM` addon already in this repo - separate prefix
 (`MADOSA` vs `HGM`), separate protocol, no shared code.
 

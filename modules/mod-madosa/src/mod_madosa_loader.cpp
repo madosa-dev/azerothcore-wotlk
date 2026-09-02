@@ -36,6 +36,9 @@ void AddSC_madosa_passerby_buff();
 void AddSC_madosa_service_pets();
 void AddSC_madosa_worldforged();
 void AddSC_madosa_worldforged_ascension();
+void AddSC_madosa_hardcore_pvp();
+void AddSC_madosa_hardcore_pvp_loot();
+void AddSC_madosa_chronicle();
 
 // Add all
 void Addmod_madosaScripts()
@@ -54,4 +57,7 @@ void Addmod_madosaScripts()
     AddSC_madosa_service_pets();
     AddSC_madosa_worldforged();
     AddSC_madosa_worldforged_ascension();
+    AddSC_madosa_hardcore_pvp();
+    AddSC_madosa_hardcore_pvp_loot();
+    AddSC_madosa_chronicle();
 }

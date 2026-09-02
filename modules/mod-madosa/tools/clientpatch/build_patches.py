@@ -215,12 +215,119 @@ EXTRA_SPELLS = {
 # RangeIndex 1 ("Self Only"), DurationIndex 21 (Duration[0] = -1, i.e. until
 # removed) - all verified against this client's own SpellCastTimes/SpellRange/
 # SpellDuration.dbc. Ids start at 900001, comfortably above the ~80864 real max.
+# `icon`/`icon_archive` are optional: an entry that names them gets a brand new
+# SpellIcon.dbc row and its .blp copied out of an Ascension archive, while one
+# that only gives `spellicon_id` points at an icon this client already ships.
+# `attributes`/`attributes_ex3` are optional too, and default to 0.
 NEW_SPELLS = {
     "XP Boost": dict(
         spell_id=900001, spellicon_id=4501,
         icon="xpbonus_icon", icon_archive="patch-I.MPQ",
         name="XP Boost",
         desc="You are receiving bonus experience.",
+    ),
+    # The three Hardcore PvP marks (mod_madosa_hardcore_pvp.cpp). These auras
+    # are load-bearing rather than decorative - a chest only drops between two
+    # Hardcore players, so the mark is how a killer knows a target is carrying
+    # anything - which is why they carry NO_AURA_CANCEL (0x80000000): a player
+    # must not be able to right-click their status off. Plus ALLOW_AURA_WHILE_DEAD
+    # (attributes_ex3 0x00100000) so the mark survives the corpse run, and the
+    # while-dead/mounted/sitting bits so nothing ever refuses the cast.
+    # Icons are this client's own: Spell_Shadow_Skull, and the two PvP banners
+    # for the faction each traitor turned their back on.
+    "Hardcore PvP": dict(
+        spell_id=900002, spellicon_id=3139,
+        attributes=0x89800000, attributes_ex3=0x00100000,
+        name="Hardcore PvP",
+        desc="You gain bonus experience and world mobs may drop dungeon gear for you. "
+             "Killed by another Hardcore player, you lose part of what your bags hold.",
+    ),
+    "Traitor to the Alliance": dict(
+        spell_id=900003, spellicon_id=1703,
+        attributes=0x89800000, attributes_ex3=0x00100000,
+        name="Traitor to the Alliance",
+        desc="You and every other traitor are hostile to each other, whatever your factions. "
+             "The Alliance's own cities will not have you.",
+    ),
+    "Traitor to the Horde": dict(
+        spell_id=900004, spellicon_id=1704,
+        attributes=0x89800000, attributes_ex3=0x00100000,
+        name="Traitor to the Horde",
+        desc="You and every other traitor are hostile to each other, whatever your factions. "
+             "The Horde's own cities will not have you.",
+    ),
+    # War Mode, the middle risk mode. PvE deliberately has no aura of its own:
+    # it is the absence of the other two, and an icon everybody carries is
+    # noise. Ascension's own War Mode (84420) uses icon 7042, which is one of
+    # theirs and does not exist here - 279 is this client's
+    # Ability_Warrior_OffensiveStance, checked against its SpellIcon.dbc.
+    "War Mode": dict(
+        spell_id=900005, spellicon_id=279,
+        attributes=0x89800000, attributes_ex3=0x00100000,
+        name="War Mode",
+        desc="Open world PvP is enabled and you earn bonus experience. Nothing you carry is "
+             "ever taken from you - that is High-Risk.",
+    ),
+    # One per level band of the Hardcore PvP world drops
+    # (mod_madosa_hardcore_pvp_loot.cpp). The band an aura names is the band the
+    # drop actually rolls from - both come from the same LOOT_BANDS table - so
+    # the tooltip cannot drift away from what the server does. Icons escalate
+    # from a plain box to a chained chest so the change is visible at a glance.
+    "Dungeon Spoils Levels 1-19": dict(
+        spell_id=900010, spellicon_id=2492,
+        attributes=0x89800000, attributes_ex3=0x00100000,
+        name="Dungeon Spoils: Levels 1-19",
+        desc="While Hardcore PvP is on, world mobs may drop gear from Ragefire Chasm, the Deadmines, Wailing Caverns and Shadowfang Keep. "
+             "The band moves on as you level.",
+    ),
+    "Dungeon Spoils Levels 20-29": dict(
+        spell_id=900011, spellicon_id=227,
+        attributes=0x89800000, attributes_ex3=0x00100000,
+        name="Dungeon Spoils: Levels 20-29",
+        desc="While Hardcore PvP is on, world mobs may drop gear from Blackfathom Deeps, the Stockade, Gnomeregan and Razorfen Kraul. "
+             "The band moves on as you level.",
+    ),
+    "Dungeon Spoils Levels 30-39": dict(
+        spell_id=900012, spellicon_id=2930,
+        attributes=0x89800000, attributes_ex3=0x00100000,
+        name="Dungeon Spoils: Levels 30-39",
+        desc="While Hardcore PvP is on, world mobs may drop gear from Scarlet Monastery, Razorfen Downs and Uldaman. "
+             "The band moves on as you level.",
+    ),
+    "Dungeon Spoils Levels 40-49": dict(
+        spell_id=900013, spellicon_id=3210,
+        attributes=0x89800000, attributes_ex3=0x00100000,
+        name="Dungeon Spoils: Levels 40-49",
+        desc="While Hardcore PvP is on, world mobs may drop gear from Zul'Farrak, Maraudon and the Sunken Temple. "
+             "The band moves on as you level.",
+    ),
+    "Dungeon Spoils Levels 50-59": dict(
+        spell_id=900014, spellicon_id=4244,
+        attributes=0x89800000, attributes_ex3=0x00100000,
+        name="Dungeon Spoils: Levels 50-59",
+        desc="While Hardcore PvP is on, world mobs may drop gear from Blackrock Depths, Lower Blackrock Spire and Dire Maul. "
+             "The band moves on as you level.",
+    ),
+    "Dungeon Spoils Levels 60-69": dict(
+        spell_id=900015, spellicon_id=3708,
+        attributes=0x89800000, attributes_ex3=0x00100000,
+        name="Dungeon Spoils: Levels 60-69",
+        desc="While Hardcore PvP is on, world mobs may drop gear from Stratholme, Scholomance, Upper Blackrock Spire and Hellfire Citadel. "
+             "The band moves on as you level.",
+    ),
+    "Dungeon Spoils Levels 70-79": dict(
+        spell_id=900016, spellicon_id=2677,
+        attributes=0x89800000, attributes_ex3=0x00100000,
+        name="Dungeon Spoils: Levels 70-79",
+        desc="While Hardcore PvP is on, world mobs may drop gear from Coilfang Reservoir, Auchindoun, Tempest Keep and Karazhan. "
+             "The band moves on as you level.",
+    ),
+    "Dungeon Spoils Level 80": dict(
+        spell_id=900017, spellicon_id=796,
+        attributes=0x89800000, attributes_ex3=0x00100000,
+        name="Dungeon Spoils: Level 80",
+        desc="While Hardcore PvP is on, world mobs may drop gear from Northrend's dungeons, Naxxramas, Ulduar and Icecrown Citadel. "
+             "The band moves on as you level.",
     ),
 }
 
@@ -230,6 +337,7 @@ F_SPELL_ICON, F_SPELL_NAME, F_SPELL_DESC = 133, 136, 170
 
 # Field indices used to compose a brand new NEW_SPELLS row from scratch (see
 # src/server/shared/DataStores/DBCStructure.h struct SpellEntry for the layout).
+F_ATTRIBUTES, F_ATTRIBUTES_EX3 = 4, 7
 F_CASTTIME, F_DURATION, F_RANGE = 28, 40, 46
 F_EFFECT1, F_TARGET_A1, F_AURA1 = 71, 86, 95
 F_SCHOOL_MASK = 225
@@ -295,6 +403,8 @@ def collect_files():
         files.append((ip, blob))
         print(f"  {pet:14} {len(got):>3} model files + icon {c['icon']}")
     for label, c in NEW_SPELLS.items():
+        if "icon" not in c:
+            continue   # reuses an icon this client already has
         ia = c["icon_archive"]
         handles.setdefault(ia, MPQ(os.path.join(ASCENSION, ia)))
         ip = "Interface\\Icons\\%s.blp" % c["icon"]
@@ -372,6 +482,8 @@ def build_spell_dbcs(spell_blob, spell_from, icon_src, icon_from, quiet=False):
         r[1] = ib.addstr("Interface\\Icons\\" + c["icon"])
         ib.append(r)
     for label, c in NEW_SPELLS.items():
+        if "icon" not in c:
+            continue   # spellicon_id already exists in this client's SpellIcon.dbc
         r = list(tpl)
         r[0] = c["spellicon_id"]
         r[1] = ib.addstr("Interface\\Icons\\" + c["icon"])
@@ -415,6 +527,8 @@ def build_spell_dbcs(spell_blob, spell_from, icon_src, icon_from, quiet=False):
     for label, c in NEW_SPELLS.items():
         row = [0] * fc
         row[0] = c["spell_id"]
+        row[F_ATTRIBUTES] = c.get("attributes", 0)
+        row[F_ATTRIBUTES_EX3] = c.get("attributes_ex3", 0)
         row[F_CASTTIME] = CASTTIME_INSTANT
         row[F_DURATION] = DURATION_INFINITE
         row[F_RANGE] = RANGE_SELF

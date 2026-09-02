@@ -357,3 +357,215 @@ Madosa.Worldforged.Ascension.Enable = 1
 #                     0 - Disabled
 #
 Madosa.Addon.Enable = 1
+
+########################################
+# Hardcore PvP
+########################################
+#
+# An opt-in mode after Ascension WoW's: more experience while it is on, world
+# mobs that may drop dungeon and raid gear, and a chest full of your bags if
+# another Hardcore player kills you. Switched on and off at a Hardcore Herald
+# (every capital and the neutral towns) or with ".hardcore", in an inn or a
+# city. Runtime keys: hardcorepvp.enable, hardcorepvp.xppercent,
+# hardcorepvp.minlevel, hardcorepvp.togglecooldown, hardcorepvp.traitor.enable,
+# hardcorepvp.traitor.guardshostile, hardcorepvp.droppercent,
+# hardcorepvp.dropmaxitems, hardcorepvp.chestlifetime,
+# hardcorepvp.chestffaafter, hardcorepvp.repeatkillcooldown,
+# hardcorepvp.dungeondropchance, hardcorepvp.botparticipation.
+#
+
+# Madosa.HardcorePvP.Enable
+#
+#        Description: Master switch for the whole feature - the Herald, the modes already
+#                     switched on, the bonus XP, the death chests and the world drops.
+#
+#        Default:     1 - Enabled
+#                     0 - Disabled
+#
+Madosa.HardcorePvP.Enable = 1
+
+# Madosa.HardcorePvP.XPPercent
+#
+#        Description: Extra experience while Hardcore PvP is on, in percent. Note that this
+#                     multiplies whatever the XP already is, so it stacks multiplicatively
+#                     with mod-xpboost rather than adding to it.
+#
+#        Default:     10
+#
+Madosa.HardcorePvP.XPPercent = 10
+
+# Madosa.HardcorePvP.WarModeEnable
+#
+#        Description: Whether the Herald offers War Mode - the middle of the three risk modes:
+#                     open-world PvP and bonus experience, with nothing of yours at stake.
+#                     Ascension's own PvE / War Mode / High-Risk ladder, of which our
+#                     High-Risk is the top rung.
+#
+#        Default:     1 - Enabled
+#                     0 - Disabled
+#
+Madosa.HardcorePvP.WarModeEnable = 1
+
+# Madosa.HardcorePvP.WarModeXPPercent
+#
+#        Description: Extra experience in War Mode, in percent. Kept below
+#                     Madosa.HardcorePvP.XPPercent on purpose - the gap between them is what
+#                     pays for High-Risk's risk. Ascension uses 10 here against 15 for
+#                     High-Risk; this realm starts gentler.
+#
+#        Default:     5
+#
+Madosa.HardcorePvP.WarModeXPPercent = 5
+
+# Madosa.HardcorePvP.InsuranceEnable
+#
+#        Description: Whether High-Risk characters can insure their gear at the Herald, after
+#                     Ascension's own ("or Fel Com gold if your gear is insured", spell 84421).
+#                     The premium is paid up front and covers exactly one death: the chest then
+#                     holds that gold instead of the victim's belongings.
+#
+#        Default:     1 - Enabled
+#                     0 - Disabled
+#
+Madosa.HardcorePvP.InsuranceEnable = 1
+
+# Madosa.HardcorePvP.InsuranceCostGold
+#
+#        Description: The premium, in gold. Nothing is minted by a payout - this is the same
+#                     gold the victim already handed over, changing hands. Set it against what
+#                     a bagful of gear is worth on this realm: too low and High-Risk stops
+#                     risking anything, too high and nobody insures.
+#
+#        Default:     100
+#
+Madosa.HardcorePvP.InsuranceCostGold = 100
+
+# Madosa.HardcorePvP.BountyChance
+#
+#        Description: Chance, in percent, that a creature's gold is doubled - Ascension's Bounty
+#                     perk (spells 83284-83286). Both War Mode and High-Risk get it; it is the
+#                     one reward War Mode has of its own, standing in for the extra crafting
+#                     materials Ascension gives it that this realm has no equivalent for.
+#
+#        Default:     20
+#
+Madosa.HardcorePvP.BountyChance = 20
+
+# Madosa.HardcorePvP.MinLevel
+#
+#        Description: Lowest level that may enter Hardcore PvP, and below which a kill never
+#                     drops a chest.
+#
+#        Default:     20
+#
+Madosa.HardcorePvP.MinLevel = 20
+
+# Madosa.HardcorePvP.ToggleCooldownMinutes
+#
+#        Description: How long a character must wait between changes, so the mode cannot be
+#                     switched off the moment it stops being convenient. 0 disables the wait.
+#
+#        Default:     30
+#
+Madosa.HardcorePvP.ToggleCooldownMinutes = 30
+
+# Madosa.HardcorePvP.TraitorEnable
+#
+#        Description: Whether "Traitor to the Alliance/Horde" - the second, independent opt-in
+#                     that makes traitors hostile to each other regardless of faction - can be
+#                     switched on at all. Hardcore PvP on its own never enables friendly fire.
+#
+#        Default:     1 - Enabled
+#                     0 - Disabled
+#
+Madosa.HardcorePvP.TraitorEnable = 1
+
+# Madosa.HardcorePvP.TraitorGuardsHostile
+#
+#        Description: Whether treason also turns the character's own city factions hostile, so
+#                     capital guards attack on sight. Note this is the whole faction, so its
+#                     vendors, flight masters and quest givers refuse the character too - that
+#                     is the intended price, and the Hardcore Herald is faction-neutral and
+#                     also stands in the neutral towns because of it.
+#
+#        Default:     1 - Enabled
+#                     0 - Disabled
+#
+Madosa.HardcorePvP.TraitorGuardsHostile = 1
+
+# Madosa.HardcorePvP.DropPercent
+#
+#        Description: How much of what the victim's bags hold drops, in percent of the number
+#                     of stacks. Worn equipment, quest items, bags, keys, the Hearthstone,
+#                     conjured items and heirlooms are never taken; everything else in the
+#                     bags is, soulbound included.
+#
+#        Default:     20
+#
+Madosa.HardcorePvP.DropPercent = 20
+
+# Madosa.HardcorePvP.DropMaxItems
+#
+#        Description: Hard ceiling on how many stacks one death can cost, whatever DropPercent
+#                     works out to. A loot window holds 18.
+#
+#        Default:     12
+#
+Madosa.HardcorePvP.DropMaxItems = 12
+
+# Madosa.HardcorePvP.ChestLifetimeMinutes
+#
+#        Description: How long the chest stands before it crumbles away with whatever is left
+#                     in it. It also disappears the moment it is emptied.
+#
+#        Default:     5
+#
+Madosa.HardcorePvP.ChestLifetimeMinutes = 5
+
+# Madosa.HardcorePvP.RepeatKillCooldownMinutes
+#
+#        Description: How long the same killer must wait before the same victim drops a chest
+#                     again. Stops one pair of players from farming each other. 0 disables it.
+#
+#        Default:     60
+#
+Madosa.HardcorePvP.RepeatKillCooldownMinutes = 60
+
+# Madosa.HardcorePvP.DungeonDropChance
+#
+#        Description: Chance, in percent, that an ordinary world mob killed by a Hardcore player
+#                     also drops a piece of dungeon or raid gear. The item is picked to suit the
+#                     looter's level, not the mob's.
+#
+#        Default:     1.5
+#
+Madosa.HardcorePvP.DungeonDropChance = 1.5
+
+# Madosa.HardcorePvP.DungeonDropGreyMobs
+#
+#        Description: Whether mobs that are grey to the killer can drop dungeon gear too.
+#                     Sharper than it sounds if you switch it off: the core calls everything
+#                     at or below GetGrayLevel() worthless, and at level 80 that is every mob
+#                     up to level 71 - most of the world outside Northrend. Off therefore means
+#                     a max-level character sees almost nothing drop, at any percentage.
+#                     On, the cost is that mass-killing trivial mobs farms current-tier gear,
+#                     because the reward is picked for the looter's level and not the mob's -
+#                     Madosa.HardcorePvP.DungeonDropChance is the throttle for that.
+#                     Critters, totems, pets and no-experience creatures never drop either way.
+#
+#        Default:     1 - Enabled (grey mobs can drop)
+#                     0 - Disabled (only mobs worth experience)
+#
+Madosa.HardcorePvP.DungeonDropGreyMobs = 1
+
+# Madosa.HardcorePvP.BotParticipation
+#
+#        Description: What share of playerbots, in percent, run Hardcore PvP - so there is
+#                     something to hunt on a realm whose population is mostly bots. A given bot
+#                     is consistently in or out (it is derived from its guid), and bots are
+#                     never traitors. They carry the same aura and drop from their bags like
+#                     anyone else.
+#
+#        Default:     10
+#
+Madosa.HardcorePvP.BotParticipation = 10
