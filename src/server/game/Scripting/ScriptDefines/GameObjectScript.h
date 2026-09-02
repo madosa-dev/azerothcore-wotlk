@@ -62,6 +62,10 @@ public:
     // Called when the game object state is changed.
     virtual void OnGameObjectStateChanged(GameObject* /*go*/, uint32 /*state*/) { }
 
+    // Called when the client is told whether to show the gameobject as activatable to a player
+    // (the quest sparkle). Return true to show it, whatever the player's quest log says.
+    [[nodiscard]] virtual bool OnActivateToQuest(Player* /*player*/, GameObject const* /*go*/) { return false; }
+
     // Called when a GameObjectAI object is needed for the gameobject.
     virtual GameObjectAI* GetAI(GameObject* /*go*/) const { return nullptr; }
 };

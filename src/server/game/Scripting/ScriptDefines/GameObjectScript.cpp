@@ -191,6 +191,15 @@ void ScriptMgr::OnGameObjectLootStateChanged(GameObject* go, uint32 state, Unit*
     }
 }
 
+bool ScriptMgr::OnGameObjectActivateToQuest(Player* player, GameObject const* go)
+{
+    ASSERT(player);
+    ASSERT(go);
+
+    auto tempScript = ScriptRegistry<GameObjectScript>::GetScriptById(go->GetScriptId());
+    return tempScript && tempScript->OnActivateToQuest(player, go);
+}
+
 void ScriptMgr::OnGameObjectStateChanged(GameObject* go, uint32 state)
 {
     ASSERT(go);

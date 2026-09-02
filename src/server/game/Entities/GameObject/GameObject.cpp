@@ -1310,6 +1310,9 @@ void GameObject::Respawn()
 
 bool GameObject::ActivateToQuest(Player* target) const
 {
+    if (sScriptMgr->OnGameObjectActivateToQuest(target, this))
+        return true;
+
     if (target->HasQuestForGO(GetEntry()))
         return true;
 

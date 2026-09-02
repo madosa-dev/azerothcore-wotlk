@@ -255,6 +255,7 @@ public: /* GameObjectScript */
     void OnGameObjectModifyHealth(GameObject* go, Unit* attackerOrHealer, int32& change, SpellInfo const* spellInfo);
     void OnGameObjectLootStateChanged(GameObject* go, uint32 state, Unit* unit);
     void OnGameObjectStateChanged(GameObject* go, uint32 state);
+    bool OnGameObjectActivateToQuest(Player* player, GameObject const* go);
     void OnGameObjectUpdate(GameObject* go, uint32 diff);
     GameObjectAI* GetGameObjectAI(GameObject* go);
     void OnGameObjectAddWorld(GameObject* go);
