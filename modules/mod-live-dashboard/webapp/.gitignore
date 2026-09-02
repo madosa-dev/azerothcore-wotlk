@@ -6,3 +6,6 @@
 
 # The map tile pyramid - ~100 MB, built from the client by tools/build_map_tiles.py.
 /tiles
+
+# Item icons - ~20 MB, built from the client by tools/build_item_icons.py.
+/icons

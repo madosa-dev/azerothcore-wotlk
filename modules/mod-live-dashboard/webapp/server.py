@@ -34,6 +34,21 @@ DIST_DIR = Path(__file__).resolve().parent / "dist"
 # build: it is ~100 MB and regenerated locally, not shipped.
 TILES_DIR = Path(__file__).resolve().parent / "tiles"
 
+# Item icons, built from the client by tools/build_item_icons.py: one webp per
+# icon name under icons/, and index.json mapping item display id -> name. Read
+# once at startup; an install without it simply gets no icons on the sheet.
+ICONS_DIR = Path(__file__).resolve().parent / "icons"
+
+
+def load_icon_index() -> dict:
+    try:
+        return json.loads((ICONS_DIR / "index.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+ICON_BY_DISPLAY_ID = load_icon_index()
+
 CLASS_NAMES = {
     1: "Warrior", 2: "Paladin", 3: "Hunter", 4: "Rogue", 5: "Priest",
     6: "Death Knight", 7: "Shaman", 8: "Mage", 9: "Warlock", 11: "Druid",
@@ -163,17 +178,17 @@ class DB:
         rows = self.query(
             "SELECT c.name, c.race, c.class, c.gender, c.level, c.money, c.totaltime, c.leveltime, "
             "c.online, c.totalKills, c.totalHonorPoints, c.arenaPoints, c.logout_time, "
-            "IFNULL(g.name, '') FROM characters c "
+            "IFNULL(g.name, ''), c.skin, c.face, c.hairStyle, c.hairColor, c.facialStyle FROM characters c "
             "LEFT JOIN guild_member gm ON gm.guid = c.guid LEFT JOIN guild g ON g.guildid = gm.guildid "
             f"WHERE c.guid = {guid}",
             self.characters,
         )
-        if not rows or len(rows[0]) < 14:
+        if not rows or len(rows[0]) < 19:
             return None
         r = rows[0]
 
         gear = self.query(
-            "SELECT ci.slot, ii.itemEntry, it.name, it.Quality, it.ItemLevel "
+            "SELECT ci.slot, ii.itemEntry, it.name, it.Quality, it.ItemLevel, it.displayid, it.InventoryType "
             "FROM character_inventory ci "
             "JOIN item_instance ii ON ii.guid = ci.item "
             f"JOIN {self.world['database']}.item_template it ON it.entry = ii.itemEntry "
@@ -181,8 +196,11 @@ class DB:
             self.characters,
         )
         equipment = [
-            {"slot": int(g[0]), "entry": int(g[1]), "name": g[2], "quality": int(g[3]), "ilvl": int(g[4])}
-            for g in gear if len(g) >= 5
+            {
+                "slot": int(g[0]), "entry": int(g[1]), "name": g[2], "quality": int(g[3]), "ilvl": int(g[4]),
+                "displayId": int(g[5]), "icon": ICON_BY_DISPLAY_ID.get(g[5], ""),
+            }
+            for g in gear if len(g) >= 7
         ]
         rated = [e["ilvl"] for e in equipment if e["slot"] not in COSMETIC_SLOTS]
         avg_ilvl = round(sum(rated) / len(rated)) if rated else 0
@@ -209,7 +227,13 @@ class DB:
             "name": r[0],
             "race": RACE_NAMES.get(race, f"Race {race}"),
             "class": CLASS_NAMES.get(cls, f"Class {cls}"),
+            "raceId": race,
+            "classId": cls,
             "gender": "female" if r[3] == "1" else "male",
+            "appearance": {
+                "skin": int(r[14]), "face": int(r[15]), "hairStyle": int(r[16]),
+                "hairColor": int(r[17]), "facialStyle": int(r[18]),
+            },
             "level": int(r[4]),
             "money": int(r[5]),
             "totaltime": int(r[6]),
@@ -421,6 +445,15 @@ def resolve_tile(url_path: str) -> Path | None:
     return candidate if candidate.is_file() else None
 
 
+def resolve_icon(url_path: str) -> Path | None:
+    """/icons/<name>.webp, confined to ICONS_DIR."""
+    name = url_path[len("/icons/"):]
+    if not re.fullmatch(r"[a-z0-9_\-]+\.webp", name):
+        return None
+    candidate = ICONS_DIR / name
+    return candidate if candidate.is_file() else None
+
+
 def resolve_static_file(url_path: str) -> Path | None:
     """Maps a request path to a file under DIST_DIR, defaulting to index.html
     for `/` and refusing to escape DIST_DIR."""
@@ -441,6 +474,21 @@ def make_handler(db: DB, token: str):
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _icon(self, url_path):
+            path = resolve_icon(url_path)
+            if path is None:
+                self.send_response(404)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            body = path.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "image/webp")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "public, max-age=604800")
             self.end_headers()
             self.wfile.write(body)
 
@@ -503,6 +551,8 @@ def make_handler(db: DB, token: str):
 
                 if path.startswith("/tiles/"):
                     self._tile(path)
+                elif path.startswith("/icons/"):
+                    self._icon(path)
                 elif path == "/api/positions":
                     self._json(db.positions())
                 elif path == "/api/stats":

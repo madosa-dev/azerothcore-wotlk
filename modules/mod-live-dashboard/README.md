@@ -63,6 +63,20 @@ game persists, so it works for someone who is offline too, and follows the
 live row for HP and area while they are on. `?guid=N` in the URL opens a card
 straight away, and switches to that character's continent.
 
+The card is laid out like the game's own character frame - slots down both
+sides, weapons underneath - with each item's icon in a frame of its quality
+colour, the way the game draws it. The icons come from the client too:
+
+```bash
+python3 tools/build_item_icons.py /path/to/your/3.3.5a/client
+```
+
+reads ItemDisplayInfo.dbc and the ~5000 icon textures it names out of the
+archives (they live in the locale archives; custom ones such as mod-madosa's
+Ascension items in the data patches) into `webapp/icons/` (~20 MB,
+gitignored). Without it the sheet still works, showing a quality-coloured
+placeholder where the icon would be.
+
 For a playerbot the card also offers actions - revive, level up, refresh,
 send it grinding, teleport it to a city, log it out - which go through the
 admin command queue below and therefore need the admin token, unlocked once in

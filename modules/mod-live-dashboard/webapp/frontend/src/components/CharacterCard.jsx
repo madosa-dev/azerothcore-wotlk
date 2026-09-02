@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useAdminToken, runAdminCommand } from '../hooks/useAdminToken'
+import { CLASS_COLORS } from '../chronicle'
 
 const QUALITY_COLORS = ['#9d9d9d', '#ffffff', '#1eff00', '#0070dd', '#a335ee', '#ff8000', '#e6cc80', '#e6cc80']
 
-// Equipment slots as the character sheet lays them out: a left column, a
-// right column, and the weapons underneath.
+// The character frame's own arrangement: eight slots down the left, eight
+// down the right, the weapons underneath. Same order as the game draws them.
 const LEFT = [[0, 'Head'], [1, 'Neck'], [2, 'Shoulder'], [14, 'Back'], [4, 'Chest'], [3, 'Shirt'], [18, 'Tabard'], [8, 'Wrist']]
-const RIGHT = [[9, 'Hands'], [5, 'Waist'], [6, 'Legs'], [7, 'Feet'], [10, 'Ring'], [11, 'Ring'], [12, 'Trinket'], [13, 'Trinket']]
-const WEAPONS = [[15, 'Main hand'], [16, 'Off hand'], [17, 'Ranged']]
+const RIGHT = [[9, 'Hands'], [5, 'Waist'], [6, 'Legs'], [7, 'Feet'], [10, 'Finger'], [11, 'Finger'], [12, 'Trinket'], [13, 'Trinket']]
+const WEAPONS = [[15, 'Main Hand'], [16, 'Off Hand'], [17, 'Ranged']]
 
 const CITIES = ['Stormwind', 'Ironforge', 'Darnassus', 'Orgrimmar', 'ThunderBluff', 'Undercity',
   'Shattrath', 'Dalaran', 'BootyBay', 'Gadgetzan']
@@ -18,23 +19,36 @@ function played(seconds) {
   return d ? `${d}d ${h}h` : `${h}h ${Math.floor((seconds % 3600) / 60)}m`
 }
 
-function money(copper) {
+function Money({ copper }) {
   const g = Math.floor(copper / 10000)
   const s = Math.floor((copper % 10000) / 100)
-  return g >= 1000 ? `${g.toLocaleString()}g` : `${g}g ${s}s`
+  const c = copper % 100
+  return (
+    <span className="money">
+      {g > 0 && <><b>{g.toLocaleString()}</b><i className="coin g" /></>}
+      <b>{s}</b><i className="coin s" />
+      <b>{c}</b><i className="coin c" />
+    </span>
+  )
 }
 
-function Slot({ label, item }) {
+// One slot of the paper doll: the icon in a quality-coloured frame, or the
+// empty socket the game shows when nothing is worn. Everything else - name,
+// item level - is the tooltip, as in the game.
+function Slot({ label, item, side }) {
+  const color = item ? QUALITY_COLORS[item.quality] || '#fff' : null
   return (
-    <li className="cc-slot">
-      <span className="cc-slot-label">{label}</span>
-      {item ? (
-        <span className="cc-item" style={{ color: QUALITY_COLORS[item.quality] || '#fff' }} title={`Item level ${item.ilvl}`}>
-          {item.name}
-          <small>{item.ilvl}</small>
-        </span>
-      ) : <span className="cc-item empty">—</span>}
-    </li>
+    <div className={`pd-slot ${side}`} title={item ? `${item.name} (item level ${item.ilvl})` : label}>
+      <div className="pd-socket" style={color ? { borderColor: color, boxShadow: `0 0 6px ${color}55` } : undefined}>
+        {item?.icon
+          ? <img src={`/icons/${item.icon}.webp`} alt="" loading="lazy" />
+          : item
+            ? <span className="pd-noicon" style={{ color }}>{item.name.slice(0, 2)}</span>
+            : <span className="pd-empty" />}
+        {item && <span className="pd-ilvl">{item.ilvl}</span>}
+      </div>
+      <span className="pd-label" style={color ? { color } : undefined}>{item ? item.name : label}</span>
+    </div>
   )
 }
 
@@ -110,25 +124,29 @@ export default function CharacterCard({ guid, live, onClose }) {
 
   const name = data?.name ?? live?.name ?? '…'
   const isBot = live?.isBot ?? data?.isBot ?? false
+  const classColor = CLASS_COLORS[data?.classId] || 'var(--text)'
   const bySlot = new Map((data?.equipment ?? []).map((i) => [i.slot, i]))
+  const level = data?.level ?? live?.level
+  const raceClass = data ? `${data.race} ${data.class}` : (live ? `${live.race} ${live.class}` : '')
 
   return (
-    <aside className={`cc ${isBot ? 'bot' : 'player'}`}>
-      <div className="cc-head">
+    <aside className={`cc pd ${isBot ? 'bot' : 'player'}`}>
+      <div className="pd-head">
         <div>
-          <h3>{name} <span className="cc-kind">{isBot ? 'playerbot' : 'player'}</span></h3>
-          <p className="cc-sub">
-            {data ? `Level ${data.level} ${data.race} ${data.class}` : (live ? `Level ${live.level} ${live.race} ${live.class}` : '')}
-            {data?.guild ? <> · &lt;{data.guild}&gt;</> : null}
+          <h3 style={{ color: classColor }}>{name}</h3>
+          <p className="pd-sub">
+            {level != null && <>Level {level} {raceClass}</>}
+            {data?.guild ? <span className="pd-guild"> &lt;{data.guild}&gt;</span> : null}
+            <span className="cc-kind">{isBot ? 'playerbot' : 'player'}</span>
           </p>
         </div>
         <button className="cc-close" onClick={onClose} aria-label="Close">×</button>
       </div>
 
       {live && (
-        <div className="cc-live">
-          <div className="cc-hp"><i style={{ width: `${live.hpPct}%` }} /></div>
-          <span>{live.hpPct}% HP · {live.areaName}</span>
+        <div className="pd-live">
+          <div className="pd-hp" title={`${live.hpPct}% health`}><i style={{ width: `${live.hpPct}%` }} /></div>
+          <span>{live.areaName}</span>
         </div>
       )}
 
@@ -136,31 +154,35 @@ export default function CharacterCard({ guid, live, onClose }) {
 
       {data && (
         <>
-          <dl className="cc-facts">
-            <div><dt>Item level</dt><dd>{data.avgItemLevel || '—'}</dd></div>
-            <div><dt>Gold</dt><dd>{money(data.money)}</dd></div>
-            <div><dt>Played</dt><dd>{played(data.totaltime)}</dd></div>
-            <div><dt>Honor kills</dt><dd>{data.totalKills.toLocaleString()}</dd></div>
-            <div><dt>Honor</dt><dd>{data.totalHonorPoints.toLocaleString()}</dd></div>
-            <div><dt>Arena points</dt><dd>{data.arenaPoints.toLocaleString()}</dd></div>
-          </dl>
-
-          <div className="cc-gear">
-            <ul>{LEFT.map(([slot, label]) => <Slot key={slot} label={label} item={bySlot.get(slot)} />)}</ul>
-            <ul>{RIGHT.map(([slot, label]) => <Slot key={slot} label={label} item={bySlot.get(slot)} />)}</ul>
+          <div className="pd-doll">
+            <div className="pd-col">
+              {LEFT.map(([slot, label]) => <Slot key={slot} label={label} item={bySlot.get(slot)} side="left" />)}
+            </div>
+            <div className="pd-centre">
+              <div className="pd-stat big"><b>{data.avgItemLevel || '—'}</b><span>item level</span></div>
+              <div className="pd-stat"><b><Money copper={data.money} /></b><span>gold</span></div>
+              <div className="pd-stat"><b>{played(data.totaltime)}</b><span>played</span></div>
+              <div className="pd-stat"><b>{data.totalKills.toLocaleString()}</b><span>honorable kills</span></div>
+              <div className="pd-stat"><b>{data.totalHonorPoints.toLocaleString()}</b><span>honor</span></div>
+              <div className="pd-stat"><b>{data.arenaPoints.toLocaleString()}</b><span>arena points</span></div>
+            </div>
+            <div className="pd-col">
+              {RIGHT.map(([slot, label]) => <Slot key={slot} label={label} item={bySlot.get(slot)} side="right" />)}
+            </div>
           </div>
-          <ul className="cc-weapons">
-            {WEAPONS.map(([slot, label]) => <Slot key={slot} label={label} item={bySlot.get(slot)} />)}
-          </ul>
+          <div className="pd-weapons">
+            {WEAPONS.map(([slot, label]) => <Slot key={slot} label={label} item={bySlot.get(slot)} side="bottom" />)}
+          </div>
 
           {data.professions.length > 0 && (
-            <div className="cc-profs">
-              <h4>Professions</h4>
-              <ul>
-                {data.professions.map((p) => (
-                  <li key={p.name}><span>{p.name}</span><span>{p.value} / {p.max}</span></li>
-                ))}
-              </ul>
+            <div className="pd-profs">
+              {data.professions.map((p) => (
+                <div key={p.name} className="pd-prof" title={`${p.name} ${p.value} / ${p.max}`}>
+                  <span>{p.name}</span>
+                  <i><b style={{ width: `${(p.value / Math.max(1, p.max)) * 100}%` }} /></i>
+                  <em>{p.value}/{p.max}</em>
+                </div>
+              ))}
             </div>
           )}
         </>
