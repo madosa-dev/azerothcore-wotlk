@@ -987,3 +987,28 @@ main.wide {
 @media (max-width: 900px) {
   .pd { width: 100%; }
 }
+
+/* --------------------------------------------------------- item tooltip */
+
+.tip {
+  position: fixed;
+  z-index: 50;
+  width: 260px;
+  padding: 8px 10px;
+  background: rgba(8, 10, 20, 0.97);
+  border: 1px solid #6b6b6b;
+  border-radius: 4px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.7), inset 0 0 0 1px #000;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #fff;
+  pointer-events: none;
+}
+
+.tip-name { font-size: 14px; font-weight: 600; margin-bottom: 2px; }
+.tip-line { color: #fff; }
+.tip-line.muted { color: #ffd100; font-size: 11px; }
+.tip-line.green { color: #1eff00; }
+.tip-line.flavor { color: #ffd100; font-style: italic; margin-top: 4px; }
+.tip-row { display: flex; justify-content: space-between; gap: 8px; }
+.tip .money { font-size: 12px; }

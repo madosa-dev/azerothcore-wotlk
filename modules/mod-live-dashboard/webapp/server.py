@@ -49,6 +49,121 @@ def load_icon_index() -> dict:
 
 ICON_BY_DISPLAY_ID = load_icon_index()
 
+
+def load_spell_text() -> dict:
+    try:
+        return json.loads((ICONS_DIR / "spells.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+SPELL_TEXT = load_spell_text()
+
+# item_template.stat_type -> what the tooltip says. The first group are the
+# white "+N Stat" lines; everything else the game phrases as a green "Equip:"
+# line, and so does this.
+STAT_NAMES = {
+    0: "Mana", 1: "Health", 3: "Agility", 4: "Strength", 5: "Intellect", 6: "Spirit", 7: "Stamina",
+}
+RATING_TEXT = {
+    12: "Increases defense rating by {}.", 13: "Increases your dodge rating by {}.",
+    14: "Increases your parry rating by {}.", 15: "Increases your shield block rating by {}.",
+    16: "Improves melee hit rating by {}.", 17: "Improves ranged hit rating by {}.",
+    18: "Improves spell hit rating by {}.", 19: "Improves melee critical strike rating by {}.",
+    20: "Improves ranged critical strike rating by {}.", 21: "Improves spell critical strike rating by {}.",
+    28: "Improves melee haste rating by {}.", 29: "Improves ranged haste rating by {}.",
+    30: "Improves spell haste rating by {}.", 31: "Improves hit rating by {}.",
+    32: "Improves critical strike rating by {}.", 35: "Improves your resilience rating by {}.",
+    36: "Improves haste rating by {}.", 37: "Increases your expertise rating by {}.",
+    38: "Increases attack power by {}.", 39: "Increases ranged attack power by {}.",
+    40: "Increases attack power by {} in Cat, Bear, Dire Bear, and Moonkin forms only.",
+    41: "Increases healing done by spells by {}.", 42: "Increases damage done by spells by {}.",
+    43: "Restores {} mana per 5 sec.", 44: "Increases your armor penetration rating by {}.",
+    45: "Increases spell power by {}.", 46: "Restores {} health per 5 sec.",
+    47: "Increases your spell penetration by {}.", 48: "Increases the block value of your shield by {}.",
+}
+BINDING = {1: "Binds when picked up", 2: "Binds when equipped", 3: "Binds when used", 4: "Quest Item"}
+INVENTORY_TYPE = {
+    1: "Head", 2: "Neck", 3: "Shoulder", 4: "Shirt", 5: "Chest", 6: "Waist", 7: "Legs", 8: "Feet", 9: "Wrist",
+    10: "Hands", 11: "Finger", 12: "Trinket", 13: "One-Hand", 14: "Off Hand", 15: "Ranged", 16: "Back",
+    17: "Two-Hand", 18: "Bag", 19: "Tabard", 20: "Chest", 21: "Main Hand", 22: "One-Hand", 23: "Held In Off-hand",
+    24: "Ammo", 25: "Thrown", 26: "Ranged", 28: "Relic",
+}
+ARMOR_SUBCLASS = {1: "Cloth", 2: "Leather", 3: "Mail", 4: "Plate", 6: "Shield", 7: "Libram", 8: "Idol", 9: "Totem", 10: "Sigil"}
+WEAPON_SUBCLASS = {
+    0: "Axe", 1: "Axe", 2: "Bow", 3: "Gun", 4: "Mace", 5: "Mace", 6: "Polearm", 7: "Sword", 8: "Sword",
+    10: "Staff", 13: "Fist Weapon", 15: "Dagger", 16: "Thrown", 18: "Crossbow", 19: "Wand", 20: "Fishing Pole",
+}
+SPELL_TRIGGER_EQUIP = 1
+SPELL_TRIGGER_USE = 0
+
+
+def spell_line(spell_id: int) -> str:
+    """The tooltip text of an equip/use spell, with its values filled in.
+    A description whose placeholders are beyond $s1-$s3 (durations, chained
+    spells) is dropped rather than shown half-resolved."""
+    entry = SPELL_TEXT.get(str(spell_id))
+    if not entry:
+        return ""
+    text, s1, s2, s3 = entry
+    text = text.replace("$s1", str(abs(s1))).replace("$s2", str(abs(s2))).replace("$s3", str(abs(s3)))
+    if "$" in text:
+        return ""
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def item_tooltip(g: list) -> dict:
+    """Everything the game's tooltip shows for an item, from item_template."""
+    (cls, subclass, inv_type, bonding, req_level, armor, dmg_min, dmg_max, delay,
+     max_durability, sell_price, description, durability) = (
+        int(g[7]), int(g[8]), int(g[9]), int(g[10]), int(g[11]), int(g[12]), float(g[13]), float(g[14]),
+        int(g[15]), int(g[16]), int(g[17]), g[18], int(g[19]))
+    stats = [(int(g[20 + 2 * k]), int(g[21 + 2 * k])) for k in range(10)]
+    spells = [(int(g[40 + 2 * k]), int(g[41 + 2 * k])) for k in range(3)]
+
+    tip = {
+        "binding": BINDING.get(bonding, ""),
+        "slot": INVENTORY_TYPE.get(inv_type, ""),
+        "type": "",
+        "armor": armor,
+        "damage": None,
+        "stats": [],
+        "equip": [],
+        "use": [],
+        "durability": [durability, max_durability] if max_durability else None,
+        "reqLevel": req_level,
+        "sell": sell_price,
+        "flavor": description,
+    }
+    if cls == 4:
+        tip["type"] = ARMOR_SUBCLASS.get(subclass, "")
+    elif cls == 2:
+        tip["type"] = WEAPON_SUBCLASS.get(subclass, "")
+        if delay:
+            speed = delay / 1000.0
+            tip["damage"] = {
+                "min": int(dmg_min), "max": int(dmg_max), "speed": round(speed, 2),
+                "dps": round((dmg_min + dmg_max) / 2.0 / speed, 1),
+            }
+    for stat_type, value in stats:
+        if not value:
+            continue
+        if stat_type in STAT_NAMES:
+            tip["stats"].append({"name": STAT_NAMES[stat_type], "value": value})
+        elif stat_type in RATING_TEXT:
+            tip["equip"].append(RATING_TEXT[stat_type].format(value))
+    for spell_id, trigger in spells:
+        if not spell_id:
+            continue
+        line = spell_line(spell_id)
+        if not line:
+            continue
+        if trigger == SPELL_TRIGGER_EQUIP:
+            tip["equip"].append(line)
+        elif trigger == SPELL_TRIGGER_USE:
+            tip["use"].append(line)
+    return tip
+
 CLASS_NAMES = {
     1: "Warrior", 2: "Paladin", 3: "Hunter", 4: "Rogue", 5: "Priest",
     6: "Death Knight", 7: "Shaman", 8: "Mage", 9: "Warlock", 11: "Druid",
@@ -188,7 +303,11 @@ class DB:
         r = rows[0]
 
         gear = self.query(
-            "SELECT ci.slot, ii.itemEntry, it.name, it.Quality, it.ItemLevel, it.displayid, it.InventoryType "
+            "SELECT ci.slot, ii.itemEntry, it.name, it.Quality, it.ItemLevel, it.displayid, it.InventoryType, "
+            "it.class, it.subclass, it.InventoryType, it.bonding, it.RequiredLevel, it.armor, "
+            "it.dmg_min1, it.dmg_max1, it.delay, it.MaxDurability, it.SellPrice, it.description, ii.durability, "
+            + ", ".join(f"it.stat_type{k}, it.stat_value{k}" for k in range(1, 11)) + ", "
+            + ", ".join(f"it.spellid_{k}, it.spelltrigger_{k}" for k in range(1, 4)) + " "
             "FROM character_inventory ci "
             "JOIN item_instance ii ON ii.guid = ci.item "
             f"JOIN {self.world['database']}.item_template it ON it.entry = ii.itemEntry "
@@ -199,8 +318,9 @@ class DB:
             {
                 "slot": int(g[0]), "entry": int(g[1]), "name": g[2], "quality": int(g[3]), "ilvl": int(g[4]),
                 "displayId": int(g[5]), "icon": ICON_BY_DISPLAY_ID.get(g[5], ""),
+                "tooltip": item_tooltip(g),
             }
-            for g in gear if len(g) >= 7
+            for g in gear if len(g) >= 46
         ]
         rated = [e["ilvl"] for e in equipment if e["slot"] not in COSMETIC_SLOTS]
         avg_ilvl = round(sum(rated) / len(rated)) if rated else 0

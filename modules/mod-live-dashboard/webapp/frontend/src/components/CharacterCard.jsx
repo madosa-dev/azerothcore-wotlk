@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useAdminToken, runAdminCommand } from '../hooks/useAdminToken'
 import { CLASS_COLORS } from '../chronicle'
+import ItemTooltip from './ItemTooltip'
 
 const QUALITY_COLORS = ['#9d9d9d', '#ffffff', '#1eff00', '#0070dd', '#a335ee', '#ff8000', '#e6cc80', '#e6cc80']
 
@@ -33,12 +34,15 @@ function Money({ copper }) {
 }
 
 // One slot of the paper doll: the icon in a quality-coloured frame, or the
-// empty socket the game shows when nothing is worn. Everything else - name,
-// item level - is the tooltip, as in the game.
-function Slot({ label, item, side }) {
+// empty socket the game shows when nothing is worn. Everything else is the
+// tooltip, as in the game - on hover with a mouse, on tap on a phone.
+function Slot({ label, item, side, onHover }) {
   const color = item ? QUALITY_COLORS[item.quality] || '#fff' : null
+  const show = (e) => item && onHover(item, e.currentTarget)
   return (
-    <div className={`pd-slot ${side}`} title={item ? `${item.name} (item level ${item.ilvl})` : label}>
+    <div className={`pd-slot ${side}`} title={item ? undefined : label}
+      onMouseEnter={show} onMouseLeave={() => onHover(null)}
+      onClick={(e) => { if (item) { e.stopPropagation(); onHover(item, e.currentTarget, true) } }}>
       <div className="pd-socket" style={color ? { borderColor: color, boxShadow: `0 0 6px ${color}55` } : undefined}>
         {item?.icon
           ? <img src={`/icons/${item.icon}.webp`} alt="" loading="lazy" />
@@ -129,6 +133,21 @@ export default function CharacterCard({ guid, live, onClose }) {
   const level = data?.level ?? live?.level
   const raceClass = data ? `${data.race} ${data.class}` : (live ? `${live.race} ${live.class}` : '')
 
+  // Hover shows the tooltip and leaving hides it; a tap (no hover on a
+  // phone) pins it until the next tap anywhere.
+  const [tip, setTip] = useState(null)
+  const onHover = (item, anchor, pin = false) => {
+    if (!item) { if (!tip?.pinned) setTip(null); return }
+    if (pin && tip?.pinned && tip.item === item) { setTip(null); return }
+    setTip({ item, anchor, pinned: pin })
+  }
+  useEffect(() => {
+    if (!tip?.pinned) return
+    const off = () => setTip(null)
+    document.addEventListener('click', off)
+    return () => document.removeEventListener('click', off)
+  }, [tip])
+
   return (
     <aside className={`cc pd ${isBot ? 'bot' : 'player'}`}>
       <div className="pd-head">
@@ -156,7 +175,7 @@ export default function CharacterCard({ guid, live, onClose }) {
         <>
           <div className="pd-doll">
             <div className="pd-col">
-              {LEFT.map(([slot, label]) => <Slot key={slot} label={label} item={bySlot.get(slot)} side="left" />)}
+              {LEFT.map(([slot, label]) => <Slot key={slot} label={label} item={bySlot.get(slot)} side="left" onHover={onHover} />)}
             </div>
             <div className="pd-centre">
               <div className="pd-stat big"><b>{data.avgItemLevel || '—'}</b><span>item level</span></div>
@@ -167,11 +186,11 @@ export default function CharacterCard({ guid, live, onClose }) {
               <div className="pd-stat"><b>{data.arenaPoints.toLocaleString()}</b><span>arena points</span></div>
             </div>
             <div className="pd-col">
-              {RIGHT.map(([slot, label]) => <Slot key={slot} label={label} item={bySlot.get(slot)} side="right" />)}
+              {RIGHT.map(([slot, label]) => <Slot key={slot} label={label} item={bySlot.get(slot)} side="right" onHover={onHover} />)}
             </div>
           </div>
           <div className="pd-weapons">
-            {WEAPONS.map(([slot, label]) => <Slot key={slot} label={label} item={bySlot.get(slot)} side="bottom" />)}
+            {WEAPONS.map(([slot, label]) => <Slot key={slot} label={label} item={bySlot.get(slot)} side="bottom" onHover={onHover} />)}
           </div>
 
           {data.professions.length > 0 && (
@@ -189,6 +208,8 @@ export default function CharacterCard({ guid, live, onClose }) {
       )}
 
       {isBot && live && <BotActions name={name} />}
+
+      {tip && <ItemTooltip item={tip.item} anchor={tip.anchor} onClose={() => setTip(null)} />}
     </aside>
   )
 }

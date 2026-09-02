@@ -34,6 +34,13 @@ from dbc import DBC  # noqa: E402
 from mpq import MPQ  # noqa: E402
 
 ICON_FIELD = 5   # ItemDisplayInfo.dbc: InventoryIcon[0]
+
+# Spell.dbc (3.3.5, 234 fields): Description_enUS, EffectDieSides[3], EffectBasePoints[3].
+# An effect's shown value is base points plus die sides - the client rolls the die at
+# its maximum for a tooltip, and for the flat "+N rating" spells the die is 1.
+SPELL_DESC_FIELD = 170
+SPELL_DIESIDES_FIELD = 74
+SPELL_BASEPOINTS_FIELD = 80
 ICON_SIZE = 64
 
 
@@ -138,6 +145,29 @@ def main():
             print(f"  {i}/{len(names)} ({time.time() - started:.0f}s)")
 
     (args.out / "index.json").write_text(json.dumps(index, separators=(",", ":")))
+
+    # The "Equip:" lines of a tooltip are spell descriptions, with $s1..$s3
+    # standing for the spell's effect values. Spell.dbc is the only source, so
+    # every spell that has a description goes into spells.json as
+    # [description, s1, s2, s3]; server.py substitutes the values.
+    raw = read_any(archives, "DBFilesClient\\Spell.dbc")
+    if raw:
+        tmp.write_bytes(raw)
+        spells = DBC(str(tmp))
+        tmp.unlink()
+        text = {}
+        for row in spells.rows():
+            desc = spells.s(row[SPELL_DESC_FIELD])
+            if not desc:
+                continue
+            values = []
+            for k in range(3):
+                bp = row[SPELL_BASEPOINTS_FIELD + k]
+                bp = bp - 0x100000000 if bp >= 0x80000000 else bp
+                values.append(bp + row[SPELL_DIESIDES_FIELD + k])
+            text[row[0]] = [desc, *values]
+        (args.out / "spells.json").write_text(json.dumps(text, separators=(",", ":"), ensure_ascii=False))
+        print(f"{len(text)} spell descriptions")
     total = sum(f.stat().st_size for f in args.out.glob("*.webp"))
     print(f"done: {written} written, {missing} missing, {total / 1e6:.0f} MB in {args.out}")
 
