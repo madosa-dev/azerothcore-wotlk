@@ -29,6 +29,11 @@ from pathlib import Path
 
 DIST_DIR = Path(__file__).resolve().parent / "dist"
 
+# The map tile pyramid, built from the client by tools/build_map_tiles.py.
+# Served from its own directory rather than copied into dist/ by the frontend
+# build: it is ~100 MB and regenerated locally, not shipped.
+TILES_DIR = Path(__file__).resolve().parent / "tiles"
+
 CLASS_NAMES = {
     1: "Warrior", 2: "Paladin", 3: "Hunter", 4: "Rogue", 5: "Priest",
     6: "Death Knight", 7: "Shaman", 8: "Mage", 9: "Warlock", 11: "Druid",
@@ -405,6 +410,17 @@ def _chronicle_rows(rows: list) -> list:
     return out
 
 
+def resolve_tile(url_path: str) -> Path | None:
+    """/tiles/<map>/<z>/<x>/<y>.webp or /tiles/index.json, confined to TILES_DIR."""
+    rel = url_path[len("/tiles/"):]
+    if not rel or ".." in rel:
+        return None
+    candidate = (TILES_DIR / rel).resolve()
+    if TILES_DIR.resolve() not in candidate.parents:
+        return None
+    return candidate if candidate.is_file() else None
+
+
 def resolve_static_file(url_path: str) -> Path | None:
     """Maps a request path to a file under DIST_DIR, defaulting to index.html
     for `/` and refusing to escape DIST_DIR."""
@@ -425,6 +441,26 @@ def make_handler(db: DB, token: str):
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _tile(self, url_path):
+            path = resolve_tile(url_path)
+            if path is None:
+                # Leaflet asks for every tile in view; the ocean has none, and
+                # the layer's errorTileUrl paints those transparent.
+                self.send_response(404)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            body = path.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "image/webp" if path.suffix == ".webp" else "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            # Tiles only change when the client does; a day is short enough to
+            # pick up a rebuild and long enough to never fetch one twice on a
+            # walk across a continent.
+            self.send_header("Cache-Control", "public, max-age=86400")
             self.end_headers()
             self.wfile.write(body)
 
@@ -465,7 +501,9 @@ def make_handler(db: DB, token: str):
                 path, _, raw_query = self.path.partition("?")
                 query = parse_qs(raw_query)
 
-                if path == "/api/positions":
+                if path.startswith("/tiles/"):
+                    self._tile(path)
+                elif path == "/api/positions":
                     self._json(db.positions())
                 elif path == "/api/stats":
                     self._json(db.stats())

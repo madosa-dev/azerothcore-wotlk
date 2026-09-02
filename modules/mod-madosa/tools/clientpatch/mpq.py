@@ -71,9 +71,20 @@ class MPQ:
         self.f.seek(self.base + off)
         return decrypt(self.f.read(n*esz), hash_str(key, 3))
 
+    # Decrypted once per archive. Both tables together run to megabytes on
+    # common.mpq, and decrypting them in Python costs about a second - which,
+    # done on every read, made pulling a few thousand minimap tiles a matter of
+    # hours rather than a minute.
+    def _tables(self):
+        if not hasattr(self, '_cached_tables'):
+            self._cached_tables = (
+                self._table(self.htbl_off, self.htbl_n, '(hash table)', 16),
+                self._table(self.btbl_off, self.btbl_n, '(block table)', 16),
+            )
+        return self._cached_tables
+
     def read_file(self, name):
-        ht = self._table(self.htbl_off, self.htbl_n, '(hash table)', 16)
-        bt = self._table(self.btbl_off, self.btbl_n, '(block table)', 16)
+        ht, bt = self._tables()
         i0 = hash_str(name, 0) & (self.htbl_n - 1)
         a, b = hash_str(name, 1), hash_str(name, 2)
         idx = None

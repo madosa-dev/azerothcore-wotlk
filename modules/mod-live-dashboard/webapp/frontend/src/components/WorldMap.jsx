@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MAP_IMAGES, OTHER_TAB_ID, worldToContinentPct } from '../constants'
+import { useTileIndex } from '../hooks/useTileIndex'
+import TiledMap from './TiledMap'
 
 const MIN_ZOOM = 1
 const MAX_ZOOM = 14
@@ -69,10 +71,13 @@ function useViewport(containerRef) {
     return () => el.removeEventListener('wheel', onWheel)
   }, [containerRef, zoomAt])
 
+  // Pointer capture only once the pointer has actually moved: capturing on
+  // pointerdown redirects the pointerup - and with it the click - to the
+  // frame, so no dot could ever be clicked. A press that never moves stays
+  // an ordinary click on whatever is under it.
   const onPointerDown = useCallback((e) => {
     if (e.button !== 0) return
-    drag.current = { x: e.clientX, y: e.clientY, moved: false }
-    e.currentTarget.setPointerCapture(e.pointerId)
+    drag.current = { x: e.clientX, y: e.clientY, moved: false, target: e.currentTarget, id: e.pointerId }
   }, [])
 
   const onPointerMove = useCallback((e) => {
@@ -81,6 +86,7 @@ function useViewport(containerRef) {
     const dx = e.clientX - d.x
     const dy = e.clientY - d.y
     if (!d.moved && Math.hypot(dx, dy) < 3) return
+    if (!d.moved) d.target.setPointerCapture(d.id)
     d.moved = true
     d.x = e.clientX
     d.y = e.clientY
@@ -195,6 +201,7 @@ function OtherList({ positions, onSelect }) {
 }
 
 export default function WorldMap({ positions, activeTab, selected, onSelect }) {
+  const { index, ready } = useTileIndex()
   const inTab = useMemo(
     () => positions.filter((p) => (activeTab === OTHER_TAB_ID ? !MAP_IMAGES[p.mapId] : p.mapId === activeTab)),
     [positions, activeTab],
@@ -202,6 +209,22 @@ export default function WorldMap({ positions, activeTab, selected, onSelect }) {
 
   if (activeTab === OTHER_TAB_ID) {
     return <OtherList positions={inTab} onSelect={onSelect} />
+  }
+
+  // Nothing until the index has answered, so the page does not flash the
+  // low-resolution picture before the real map takes over.
+  if (!ready) return <div className="world-map-wrap"><div className="tiled-map" /></div>
+
+  // The tile pyramid when it has been built (tools/build_map_tiles.py), the
+  // single picture with CSS zoom when it has not.
+  const extent = index?.[activeTab]
+  if (extent) {
+    return (
+      <div className="world-map-wrap">
+        <TiledMap key={activeTab} mapId={activeTab} extent={extent} positions={inTab}
+          selected={selected} onSelect={onSelect} />
+      </div>
+    )
   }
 
   return <ContinentMap mapId={activeTab} positions={inTab} selected={selected} onSelect={onSelect} />

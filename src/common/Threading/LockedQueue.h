@@ -20,6 +20,7 @@
 
 #include <atomic>
 #include <deque>
+#include <iterator>
 #include <memory>
 #include <mutex>
 
@@ -29,6 +30,7 @@ class LockedQueue
     mutable std::mutex _lock; ///< Mutex to protect access to the queue
 
     std::atomic<bool> _canceled{false}; ///< Flag indicating if the queue is canceled
+    std::atomic<std::size_t> _count{0}; ///< Number of queued items, readable without the lock
 
     StorageType _queue; ///< Storage container for the queue
 
@@ -53,6 +55,7 @@ public:
     {
         std::lock_guard<std::mutex> lock(_lock);
         _queue.push_back(std::move(item));
+        _count.fetch_add(1, std::memory_order_release);
     }
 
     /**
@@ -66,6 +69,7 @@ public:
     {
         std::lock_guard<std::mutex> lock(_lock);
         _queue.insert(_queue.begin(), begin, end);
+        _count.fetch_add(std::distance(begin, end), std::memory_order_release);
     }
 
     /**
@@ -84,6 +88,7 @@ public:
 
         result = std::move(_queue.front());
         _queue.pop_front();
+        _count.fetch_sub(1, std::memory_order_release);
         return true;
     }
 
@@ -110,6 +115,7 @@ public:
         }
 
         _queue.pop_front();
+        _count.fetch_sub(1, std::memory_order_release);
         return true;
     }
 
@@ -160,6 +166,19 @@ public:
     {
         std::lock_guard<std::mutex> lock(_lock);
         _queue.pop_front();
+        _count.fetch_sub(1, std::memory_order_release);
+    }
+
+    /**
+     * @brief Tells whether the queue is empty without taking the lock.
+     *
+     * The answer can be a moment stale: an item added right after the check is simply seen by the
+     * next check. That is exactly what a per-tick "is there anything to do" question wants, and it
+     * lets a caller that polls thousands of queues skip the mutex on every idle one.
+     */
+    [[nodiscard]] bool empty_hint() const
+    {
+        return _count.load(std::memory_order_acquire) == 0;
     }
 };
 

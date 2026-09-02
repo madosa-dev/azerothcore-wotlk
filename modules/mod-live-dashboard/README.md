@@ -42,9 +42,20 @@ is a different and much larger box - for the Eastern Kingdoms it spans tile
 columns -2 to 74 while the picture holds 24 to 44 - so every dot was squeezed
 toward the centre and the ones near the coast landed in the sea.
 
-The map zooms (scroll, double-click, or the buttons) and pans (drag), the way
-a web map does; the picture and its dots move as one layer and the dots
-counter-scale so they stay the same size on screen. Clicking a dot - or a row
+**Build the tile pyramid** and the map becomes a real web map: Leaflet over
+tiles at the minimap's full 256 px per ADT tile, loaded on demand, from a
+whole continent down to a single tile, with pinch-zoom on a phone.
+
+```bash
+cd modules/mod-live-dashboard/webapp
+python3 tools/build_map_tiles.py /path/to/your/3.3.5a/client
+```
+
+That reads the minimap straight out of the client's MPQ archives (about a
+minute, ~22 MB into `webapp/tiles/`, gitignored) and `server.py` serves it
+under `/tiles/`. Without it the dashboard falls back to the single
+low-resolution picture per continent with CSS zoom (scroll, double-click, or
+the buttons; drag to pan) - usable, but blocky when zoomed in. Clicking a dot - or a row
 in the "Other" list - opens a character card beside the map: level, class,
 guild, gold, played time, honour, every equipped item in its quality colour
 with the average item level, and professions. It is read from the tables the

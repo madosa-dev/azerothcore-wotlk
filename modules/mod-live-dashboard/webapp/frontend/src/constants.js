@@ -41,7 +41,14 @@ export const MAP_TILES = {
 // centre of the map: tile column = 32 - y / 533.33 (world y runs east to
 // west), tile row = 32 - x / 533.33 (world x runs south to north). The same
 // arithmetic the core's GridDefines use, in the other direction.
-const TILE_SIZE = 533.33333
+const ADT_YARDS = 533.33333
+
+// One web tile (and one stitched minimap tile) is 256 px square.
+export const TILE_SIZE = 256
+
+export function tileColRow(posX, posY) {
+  return { col: 32 - posY / ADT_YARDS, row: 32 - posX / ADT_YARDS }
+}
 
 // Returns 0-100 percentages ready to use as CSS left/top on the continent
 // image, or null for a map without a picture.
@@ -49,8 +56,7 @@ export function worldToContinentPct(mapId, posX, posY) {
   const t = MAP_TILES[mapId]
   if (!t) return null
 
-  const col = 32 - posY / TILE_SIZE
-  const row = 32 - posX / TILE_SIZE
+  const { col, row } = tileColRow(posX, posY)
   return {
     pctX: ((col - t.colMin) / t.cols) * 100,
     pctY: ((row - t.rowMin) / t.rows) * 100,

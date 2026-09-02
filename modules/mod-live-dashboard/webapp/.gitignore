@@ -3,3 +3,6 @@
 
 # The admin console secret - generated per install, never committed.
 .admin-token
+
+# The map tile pyramid - ~100 MB, built from the client by tools/build_map_tiles.py.
+/tiles
