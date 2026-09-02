@@ -37,11 +37,44 @@
 
 #include <cmath>
 #include <sstream>
+#include <unordered_map>
 #include <vector>
 
 namespace
 {
     constexpr uint32 LIVE_DASHBOARD_UPDATE_INTERVAL_MS = 2000;
+
+    // Every this many ticks the whole table is rewritten regardless of what
+    // changed, so a row that went wrong on the database side (a manual edit,
+    // a restore, a lost write) cannot stay wrong for the rest of the uptime.
+    constexpr uint32 FULL_RESYNC_EVERY_TICKS = 30;   // one minute
+
+    // A character who has not moved this far is written as standing still.
+    // Well under what a dot on the dashboard can show, so nothing visible is
+    // lost - and it is what turns three thousand rows a tick into a few
+    // hundred, because most bots are idle most of the time: BotActiveAlone
+    // keeps the ones nobody is near from doing anything at all.
+    constexpr float MOVED_THRESHOLD = 0.5f;
+
+    // What was last written for each character, so the next tick can skip
+    // everyone whose row would come out the same. The dashboard reads the
+    // table, not this map, so getting it wrong can only cost an extra write.
+    struct LastWritten
+    {
+        float x = 0.0f;
+        float y = 0.0f;
+        float z = 0.0f;
+        uint32 areaId = 0;
+        uint32 mapId = 0;
+        uint32 zoneId = 0;
+        uint32 level = 0;
+        uint32 hpPct = 0;
+        bool isBot = false;
+        std::string guildName;
+    };
+
+    std::unordered_map<ObjectGuid::LowType, LastWritten> lastWritten;
+    uint32 ticksSinceFullResync = FULL_RESYNC_EVERY_TICKS;   // the first tick is a full one
 
     std::string EscapedCopy(std::string str)
     {
@@ -70,30 +103,71 @@ private:
 
     static void UpdateSnapshot()
     {
-        std::vector<ObjectGuid::LowType> onlineGuids;
+        // The first version rewrote all three thousand rows every two seconds
+        // and then deleted everyone not in a three-thousand-entry NOT IN list.
+        // On the world thread that was a few milliseconds of string building;
+        // on the single character-database worker it was a three-thousand-row
+        // upsert, binlog included, every two seconds, queued ahead of every
+        // player save and chronicle line. Now a row is written only when it
+        // would differ from the last one written, and a departed character is
+        // deleted by guid rather than by exclusion.
+        bool const fullResync = ++ticksSinceFullResync >= FULL_RESYNC_EVERY_TICKS;
+        if (fullResync)
+            ticksSinceFullResync = 0;
+
+        std::unordered_map<ObjectGuid::LowType, LastWritten> seen;
+        seen.reserve(lastWritten.size() + 64);
+
         std::ostringstream rows;
         bool first = true;
+        uint32 written = 0;
 
         for (auto const& [guid, player] : ObjectAccessor::GetPlayers())
         {
             if (!player || !player->IsInWorld())
                 continue;
 
-            onlineGuids.push_back(player->GetGUID().GetCounter());
+            ObjectGuid::LowType const low = player->GetGUID().GetCounter();
 
-            uint32 areaId = player->GetAreaId();
+            LastWritten now;
+            now.x = player->GetPositionX();
+            now.y = player->GetPositionY();
+            now.z = player->GetPositionZ();
+            now.areaId = player->GetAreaId();
+            now.mapId = player->GetMapId();
+            now.zoneId = player->GetZoneId();
+            now.level = player->GetLevel();
+            now.hpPct = uint32(player->GetHealthPct());
+            now.isBot = sPlayerbotsMgr.GetPlayerbotAI(player) != nullptr;
+            if (Guild* guild = sGuildMgr->GetGuildById(player->GetGuildId()))
+                now.guildName = guild->GetName();
+
+            auto previous = lastWritten.find(low);
+            bool changed = fullResync || previous == lastWritten.end();
+            if (!changed)
+            {
+                LastWritten const& was = previous->second;
+                changed = std::fabs(was.x - now.x) > MOVED_THRESHOLD
+                    || std::fabs(was.y - now.y) > MOVED_THRESHOLD
+                    || std::fabs(was.z - now.z) > MOVED_THRESHOLD
+                    || was.areaId != now.areaId || was.mapId != now.mapId || was.zoneId != now.zoneId
+                    || was.level != now.level || was.hpPct != now.hpPct || was.isBot != now.isBot
+                    || was.guildName != now.guildName;
+            }
+
+            if (!changed)
+            {
+                seen.emplace(low, previous->second);
+                continue;
+            }
 
             std::string areaName;
-            if (AreaTableEntry const* area = sAreaTableStore.LookupEntry(areaId))
+            if (AreaTableEntry const* area = sAreaTableStore.LookupEntry(now.areaId))
                 areaName = area->area_name[DEFAULT_LOCALE];
 
-            std::string guildName;
-            if (Guild* guild = sGuildMgr->GetGuildById(player->GetGuildId()))
-                guildName = guild->GetName();
-
-            float pctX = player->GetPositionX();
-            float pctY = player->GetPositionY();
-            Map2ZoneCoordinates(pctX, pctY, areaId);
+            float pctX = now.x;
+            float pctY = now.y;
+            Map2ZoneCoordinates(pctX, pctY, now.areaId);
 
             // Areas without proper WorldMapArea bounds make Map2ZoneCoordinates divide by
             // zero (e.g. some instance/phased areas), yielding inf/nan - which would be
@@ -103,46 +177,73 @@ private:
             if (!std::isfinite(pctY))
                 pctY = 0.0f;
 
-            bool isBot = sPlayerbotsMgr.GetPlayerbotAI(player) != nullptr;
-
             if (!first)
                 rows << ",";
             first = false;
+            ++written;
 
-            rows << "(" << player->GetGUID().GetCounter()
+            rows << "(" << low
                  << ",'" << EscapedCopy(player->GetName()) << "'"
-                 << "," << (isBot ? 1 : 0)
-                 << "," << uint32(player->GetLevel())
+                 << "," << (now.isBot ? 1 : 0)
+                 << "," << now.level
                  << "," << uint32(player->getClass())
                  << "," << uint32(player->getRace())
-                 << "," << player->GetMapId()
-                 << "," << player->GetZoneId()
-                 << "," << areaId
+                 << "," << now.mapId
+                 << "," << now.zoneId
+                 << "," << now.areaId
                  << ",'" << EscapedCopy(areaName) << "'"
-                 << "," << player->GetPositionX()
-                 << "," << player->GetPositionY()
-                 << "," << player->GetPositionZ()
+                 << "," << now.x
+                 << "," << now.y
+                 << "," << now.z
                  << "," << pctX
                  << "," << pctY
-                 << "," << uint32(player->GetHealthPct())
-                 << ",'" << EscapedCopy(guildName) << "')";
+                 << "," << now.hpPct
+                 << ",'" << EscapedCopy(now.guildName) << "')";
+
+            seen.emplace(low, std::move(now));
         }
 
-        if (onlineGuids.empty())
+        // Whoever was in the table last tick and is not in the world now.
+        std::ostringstream gone;
+        bool anyGone = false;
+        for (auto const& [low, unused] : lastWritten)
         {
-            CharacterDatabase.Execute("DELETE FROM live_player_positions");
+            if (seen.count(low))
+                continue;
+            if (anyGone)
+                gone << ",";
+            anyGone = true;
+            gone << low;
+        }
+
+        lastWritten = std::move(seen);
+
+        if (fullResync)
+        {
+            // Everyone is being rewritten, so anything else in the table is a
+            // leftover from a previous run or a crash - clear it in one go.
+            if (lastWritten.empty())
+            {
+                CharacterDatabase.Execute("DELETE FROM live_player_positions");
+                return;
+            }
+
+            std::ostringstream keep;
+            bool firstKeep = true;
+            for (auto const& [low, unused] : lastWritten)
+            {
+                if (!firstKeep)
+                    keep << ",";
+                firstKeep = false;
+                keep << low;
+            }
+            CharacterDatabase.Execute("DELETE FROM live_player_positions WHERE guid NOT IN ({})", keep.str());
+        }
+        else if (anyGone)
+            CharacterDatabase.Execute("DELETE FROM live_player_positions WHERE guid IN ({})", gone.str());
+
+        if (!written)
             return;
-        }
-
-        std::ostringstream guidList;
-        for (std::size_t i = 0; i < onlineGuids.size(); ++i)
-        {
-            if (i)
-                guidList << ",";
-            guidList << onlineGuids[i];
-        }
-
-        CharacterDatabase.Execute("DELETE FROM live_player_positions WHERE guid NOT IN ({})", guidList.str());
 
         std::string sql =
             "INSERT INTO live_player_positions "
