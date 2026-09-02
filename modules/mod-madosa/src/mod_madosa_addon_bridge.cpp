@@ -46,7 +46,7 @@
 namespace
 {
     constexpr char const* ADDON_PREFIX = "MADOSA\t";
-    constexpr char const* PROTOCOL_VERSION = "1";
+    constexpr char const* PROTOCOL_VERSION = "2";
     constexpr char FIELD_SEP = '~';
 
     bool AddonBridgeEnabled()
@@ -88,11 +88,19 @@ namespace
         SendAddonPacket(player, "ERROR", code + FIELD_SEP + message);
     }
 
+    // Protocol 2: a setting arrives fully described - which widget to draw, what
+    // it may be set to, which panel it belongs on and what to call it - so the
+    // addon needs no table of its own to keep in sync with this one. Protocol 1
+    // sent only key and value; an old addon reading a new packet still finds
+    // both where it expects them, and simply ignores the rest.
     void SendSettings(Player* player)
     {
         SendAddonPacket(player, "SETTINGS_BEGIN");
         for (auto const& setting : MadosaSettings::List())
-            SendAddonPacket(player, "SETTING", setting.key + FIELD_SEP + setting.value);
+            SendAddonPacket(player, "SETTING",
+                setting.key + FIELD_SEP + setting.value + FIELD_SEP + setting.type + FIELD_SEP
+                + setting.min + FIELD_SEP + setting.max + FIELD_SEP + setting.group + FIELD_SEP
+                + setting.label + FIELD_SEP + setting.help);
         SendAddonPacket(player, "SETTINGS_END");
     }
 
