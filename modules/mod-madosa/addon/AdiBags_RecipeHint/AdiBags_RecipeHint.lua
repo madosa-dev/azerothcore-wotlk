@@ -29,13 +29,10 @@ mod.uiDesc = 'Mark recipes you can learn (tick), need more skill for (number), o
 
 local _G = _G
 local GetItemInfo = _G.GetItemInfo
-local GetNumSkillLines = _G.GetNumSkillLines
-local GetSkillLineInfo = _G.GetSkillLineInfo
-local ExpandSkillHeader = _G.ExpandSkillHeader
-local CollapseSkillHeader = _G.CollapseSkillHeader
+local GetSpellInfo = _G.GetSpellInfo
 local CreateFrame = _G.CreateFrame
 local UIParent = _G.UIParent
-local pairs, tonumber, wipe, select = _G.pairs, _G.tonumber, _G.wipe, _G.select
+local pairs, tonumber, select = _G.pairs, _G.tonumber, _G.select
 
 -- Localised through the client's own strings, so the plugin reads any locale
 -- the tooltip is written in.
@@ -54,37 +51,18 @@ local MIN_SKILL_PATTERN = ToPattern(_G.ITEM_MIN_SKILL)
 local scanner = CreateFrame('GameTooltip', 'AdiBagsRecipeHintTooltip', UIParent, 'GameTooltipTemplate')
 scanner:SetOwner(UIParent, 'ANCHOR_NONE')
 
--- name -> rank, for every skill line the character has. The skill window
--- only lists what is under an expanded header, so headers are opened for the
--- scan and closed again afterwards - from the bottom up, because collapsing
--- one shifts every index below it.
-local professions = {}
-
-local function ScanProfessions()
-    wipe(professions)
-
-    local collapsed = {}
-    for i = 1, GetNumSkillLines() do
-        local name, isHeader, isExpanded = GetSkillLineInfo(i)
-        if isHeader and not isExpanded then
-            collapsed[name] = true
-        end
-    end
-
-    ExpandSkillHeader(0)
-    for i = 1, GetNumSkillLines() do
-        local name, isHeader, _, rank = GetSkillLineInfo(i)
-        if name and not isHeader then
-            professions[name] = rank
-        end
-    end
-
-    for i = GetNumSkillLines(), 1, -1 do
-        local name, isHeader = GetSkillLineInfo(i)
-        if isHeader and collapsed[name] then
-            CollapseSkillHeader(i)
-        end
-    end
+-- Does the character have this profession? The profession's name in the
+-- "Requires Tailoring (150)" line is also the name of its spell, and
+-- GetSpellInfo(name) only answers for spells the character knows. That is all
+-- the plugin needs: whether the requirement is met the tooltip already says
+-- in red, so the rank is never asked for.
+--
+-- The first version read the skill window instead, expanding its headers to
+-- see every line - and every expand fires SKILL_LINES_CHANGED, which the
+-- plugin listens to, which scanned again, which expanded again: a C stack
+-- overflow on login.
+local function HasProfession(name)
+    return GetSpellInfo(name) ~= nil
 end
 
 local function IsRed(fontString)
@@ -120,7 +98,7 @@ local function Classify(bag, slot, itemId)
                 local profession, rank = text:match(MIN_SKILL_PATTERN)
                 if profession then
                     if IsRed(line) then
-                        if professions[profession] then
+                        if HasProfession(profession) then
                             state, needed = 'lowskill', tonumber(rank)
                         else
                             return nil
@@ -192,12 +170,10 @@ function mod:UpdateButton(event, button)
 end
 
 function mod:Refresh()
-    ScanProfessions()
     self:SendMessage('AdiBags_UpdateAllButtons')
 end
 
 function mod:OnEnable()
-    ScanProfessions()
     self:RegisterMessage('AdiBags_UpdateButton', 'UpdateButton')
     -- A profession gained or raised, or a recipe just learned, changes the
     -- answer for every recipe in the bag.
