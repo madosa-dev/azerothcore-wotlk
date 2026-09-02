@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useAdminToken } from '../hooks/useAdminToken'
 
 // Curated actions, grouped. Only commands the server console can actually run
 // are offered as buttons: anything declared Console::No in its command table
@@ -45,21 +46,8 @@ const ACTIONS = [
   },
 ]
 
-const TOKEN_KEY = 'madosa.dashboard.adminToken'
-
-function useToken() {
-  const [token, setToken] = useState(() => {
-    try { return localStorage.getItem(TOKEN_KEY) ?? '' } catch { return '' }
-  })
-  const save = useCallback(value => {
-    setToken(value)
-    try { localStorage.setItem(TOKEN_KEY, value) } catch { /* private mode */ }
-  }, [])
-  return [token, save]
-}
-
 export default function Admin() {
-  const [token, setToken] = useToken()
+  const [token, setToken] = useAdminToken()
   const [draft, setDraft] = useState('')
   const [log, setLog] = useState([])
   const [history, setHistory] = useState([])

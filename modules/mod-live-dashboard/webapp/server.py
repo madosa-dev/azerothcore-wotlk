@@ -39,6 +39,19 @@ RACE_NAMES = {
     6: "Tauren", 7: "Gnome", 8: "Troll", 10: "Blood Elf", 11: "Draenei",
 }
 
+# The primary and secondary professions, by SkillLine id. Hard-coded rather
+# than read from SkillLine.dbc because this server has no DBC reader and the
+# list has not changed since 3.3.5 shipped.
+PROFESSIONS = {
+    171: "Alchemy", 164: "Blacksmithing", 333: "Enchanting", 202: "Engineering",
+    182: "Herbalism", 773: "Inscription", 755: "Jewelcrafting", 165: "Leatherworking",
+    186: "Mining", 393: "Skinning", 197: "Tailoring",
+    129: "First Aid", 185: "Cooking", 356: "Fishing",
+}
+
+# Equipment slots that say nothing about a character's gear level.
+COSMETIC_SLOTS = {3, 18}   # shirt, tabard
+
 
 TOKEN_FILE = Path(__file__).resolve().parent / ".admin-token"
 
@@ -135,6 +148,78 @@ class DB:
                 "guild": guild_name,
             })
         return out
+
+    def character(self, guid: int) -> dict | None:
+        """One character's sheet, the way an armory would show it: who they
+        are, what they wear, what they can make. Read from the tables the
+        game itself persists, so it is a few seconds behind the world at most
+        and works for someone who is offline too."""
+        guid = int(guid)
+        rows = self.query(
+            "SELECT c.name, c.race, c.class, c.gender, c.level, c.money, c.totaltime, c.leveltime, "
+            "c.online, c.totalKills, c.totalHonorPoints, c.arenaPoints, c.logout_time, "
+            "IFNULL(g.name, '') FROM characters c "
+            "LEFT JOIN guild_member gm ON gm.guid = c.guid LEFT JOIN guild g ON g.guildid = gm.guildid "
+            f"WHERE c.guid = {guid}",
+            self.characters,
+        )
+        if not rows or len(rows[0]) < 14:
+            return None
+        r = rows[0]
+
+        gear = self.query(
+            "SELECT ci.slot, ii.itemEntry, it.name, it.Quality, it.ItemLevel "
+            "FROM character_inventory ci "
+            "JOIN item_instance ii ON ii.guid = ci.item "
+            f"JOIN {self.world['database']}.item_template it ON it.entry = ii.itemEntry "
+            f"WHERE ci.guid = {guid} AND ci.bag = 0 AND ci.slot < 19 ORDER BY ci.slot",
+            self.characters,
+        )
+        equipment = [
+            {"slot": int(g[0]), "entry": int(g[1]), "name": g[2], "quality": int(g[3]), "ilvl": int(g[4])}
+            for g in gear if len(g) >= 5
+        ]
+        rated = [e["ilvl"] for e in equipment if e["slot"] not in COSMETIC_SLOTS]
+        avg_ilvl = round(sum(rated) / len(rated)) if rated else 0
+
+        skills = self.query(
+            f"SELECT skill, value, max FROM character_skills WHERE guid = {guid} "
+            f"AND skill IN ({','.join(str(k) for k in PROFESSIONS)}) ORDER BY value DESC",
+            self.characters,
+        )
+        professions = [
+            {"name": PROFESSIONS[int(sk[0])], "value": int(sk[1]), "max": int(sk[2])}
+            for sk in skills if len(sk) >= 3 and int(sk[0]) in PROFESSIONS
+        ]
+
+        live = self.query(
+            f"SELECT is_bot FROM live_player_positions WHERE guid = {guid}",
+            self.characters,
+        )
+
+        cls = int(r[2])
+        race = int(r[1])
+        return {
+            "guid": guid,
+            "name": r[0],
+            "race": RACE_NAMES.get(race, f"Race {race}"),
+            "class": CLASS_NAMES.get(cls, f"Class {cls}"),
+            "gender": "female" if r[3] == "1" else "male",
+            "level": int(r[4]),
+            "money": int(r[5]),
+            "totaltime": int(r[6]),
+            "leveltime": int(r[7]),
+            "online": r[8] == "1",
+            "totalKills": int(r[9]),
+            "totalHonorPoints": int(r[10]),
+            "arenaPoints": int(r[11]),
+            "logoutTime": int(r[12]),
+            "guild": r[13],
+            "isBot": bool(live and live[0] and live[0][0] == "1"),
+            "avgItemLevel": avg_ilvl,
+            "equipment": equipment,
+            "professions": professions,
+        }
 
     def chronicle(self, limit: int = 200, kind: str = "") -> list:
         """The recent past, newest first."""
@@ -391,6 +476,11 @@ def make_handler(db: DB, token: str):
                     ))
                 elif path == "/api/chronicle/summary":
                     self._json(db.chronicle_summary())
+                elif path == "/api/character":
+                    sheet = db.character(int(query.get("guid", [0])[0] or 0))
+                    if sheet is None:
+                        return self._deny(404, "no such character")
+                    self._json(sheet)
                 elif path == "/api/admin/result":
                     if not self._authorised():
                         return self._deny(403, "admin token required")

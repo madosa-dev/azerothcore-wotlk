@@ -30,6 +30,35 @@ A live, self-refreshing web dashboard with three views:
 - `webapp/frontend/` is the actual UI: a Vite + React app (plain JS, no
   TypeScript) that polls those `/api/*` endpoints and renders the three views.
 
+## The map
+
+The continent pictures are the client's own minimap tiles, stitched into one
+image per continent (`webapp/frontend/public/maps/`), one 32 px square per
+533.33-yard ADT tile and cropped to the tiles that exist. That crop is the
+whole projection: a dot's position is its ADT tile column and row relative to
+the image's first tile (`MAP_TILES` in `constants.js`), nothing more. The first
+version plotted against the WorldMapArea.dbc continent rectangle instead, which
+is a different and much larger box - for the Eastern Kingdoms it spans tile
+columns -2 to 74 while the picture holds 24 to 44 - so every dot was squeezed
+toward the centre and the ones near the coast landed in the sea.
+
+The map zooms (scroll, double-click, or the buttons) and pans (drag), the way
+a web map does; the picture and its dots move as one layer and the dots
+counter-scale so they stay the same size on screen. Clicking a dot - or a row
+in the "Other" list - opens a character card beside the map: level, class,
+guild, gold, played time, honour, every equipped item in its quality colour
+with the average item level, and professions. It is read from the tables the
+game persists, so it works for someone who is offline too, and follows the
+live row for HP and area while they are on. `?guid=N` in the URL opens a card
+straight away, and switches to that character's continent.
+
+For a playerbot the card also offers actions - revive, level up, refresh,
+send it grinding, teleport it to a city, log it out - which go through the
+admin command queue below and therefore need the admin token, unlocked once in
+the Admin view. They are mod-playerbots' own `.playerbots rndbot <verb> <name>`
+console commands plus `.tele name` and `.kick`; the rndbot ones answer in the
+server log rather than to the caller, so "done" means the world tick ran it.
+
 ## The Chronicle
 
 `src/live_chronicle.cpp` writes one row per notable event into
@@ -67,8 +96,8 @@ not an admin console. The gate is at the other end:
 - `server.py` requires an `X-Admin-Token` header on every `/api/admin/*`
   endpoint. The token is generated on first run, kept in `webapp/.admin-token`
   (mode 0600) and printed at startup. Delete that file to roll it.
-- The read-only endpoints (`/api/positions`, `/api/stats`, `/api/chronicle`) are
-  unauthenticated, exactly as before.
+- The read-only endpoints (`/api/positions`, `/api/stats`, `/api/chronicle`,
+  `/api/character?guid=N`) are unauthenticated, exactly as before.
 - Binding stays localhost-only unless you pass `--host`, and passing it prints a
   warning. **Do not expose this to an untrusted network.**
 
@@ -92,7 +121,10 @@ python3 server.py
 
 Open http://127.0.0.1:8787 . By default the server only binds to localhost;
 pass `--host 0.0.0.0` to make it reachable from other devices on your network
-(do this only on a trusted network - the endpoints are unauthenticated).
+(do this only on a trusted network - the read-only endpoints are
+unauthenticated, and the admin ones are one shared token away from console
+rights). If the machine runs a firewall, the port has to be opened as well,
+e.g. `sudo ufw allow 8787/tcp`.
 
 **Development** (hot reload while editing the React app):
 

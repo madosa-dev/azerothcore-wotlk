@@ -73,18 +73,38 @@ main {
   justify-content: center;
 }
 
+/* The frame must have exactly the picture's aspect ratio: the dots are placed
+   as percentages of the frame, and a frame that is wider than its picture
+   (which is what a separate max-height used to produce) shifts every dot
+   sideways by the width of the empty band. So the width is derived from the
+   height limit through the ratio, never the other way round. */
 .world-map {
   position: relative;
-  width: 100%;
-  max-width: 900px;
-  max-height: 78vh;
+  width: min(100%, 900px, calc(78vh * var(--ratio)));
   border-radius: 10px;
   background: var(--panel2);
   border: 1px solid var(--border);
   overflow: hidden;
 }
 
-.world-map img {
+.world-map {
+  cursor: grab;
+  touch-action: none;
+}
+
+.world-map:active {
+  cursor: grabbing;
+}
+
+/* The picture and its dots move as one; see useViewport in WorldMap.jsx. */
+.map-layer {
+  position: absolute;
+  inset: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.map-layer img {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -92,6 +112,55 @@ main {
   object-fit: contain;
   user-select: none;
   pointer-events: none;
+}
+
+.map-zoom {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 2;
+}
+
+.map-zoom button {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: rgba(23, 29, 46, 0.92);
+  color: var(--text);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.map-zoom button:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+.map-hint {
+  position: absolute;
+  left: 10px;
+  bottom: 8px;
+  font-size: 11px;
+  color: var(--muted);
+  background: rgba(15, 20, 32, 0.7);
+  padding: 2px 8px;
+  border-radius: 6px;
+  pointer-events: none;
+}
+
+.map-row {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.map-row .world-map-wrap {
+  flex: 1;
+  min-width: 0;
 }
 
 .other-list {
@@ -124,10 +193,32 @@ main {
   position: absolute;
   width: 9px;
   height: 9px;
+  padding: 0;
+  border: none;
   border-radius: 50%;
-  transform: translate(-50%, -50%);
-  cursor: default;
+  /* --inv is 1/zoom, set on the layer: a dot stays 9 px on screen at any zoom. */
+  transform: translate(-50%, -50%) scale(var(--inv, 1));
+  cursor: pointer;
   box-shadow: 0 0 4px rgba(0, 0, 0, 0.6);
+}
+
+.dot:hover {
+  transform: translate(-50%, -50%) scale(calc(var(--inv, 1) * 1.6));
+  z-index: 1;
+}
+
+.dot.selected {
+  transform: translate(-50%, -50%) scale(calc(var(--inv, 1) * 1.8));
+  box-shadow: 0 0 0 2px #fff, 0 0 10px 2px rgba(255, 255, 255, 0.6);
+  z-index: 1;
+}
+
+tr.clickable {
+  cursor: pointer;
+}
+
+tr.clickable:hover td {
+  background: var(--panel2);
 }
 
 .dot.player {
@@ -468,3 +559,195 @@ main.wide {
 .adm-gate p { color: var(--muted); font-size: 13px; line-height: 1.6; }
 .adm-gate code { color: var(--text); }
 .adm-gate form { display: flex; gap: 6px; margin-top: 14px; }
+
+/* --------------------------------------------------------- character card */
+
+.cc {
+  width: 340px;
+  flex: none;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  font-size: 13px;
+  max-height: 78vh;
+  overflow-y: auto;
+}
+
+.cc-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.cc-head h3 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.cc.player .cc-head h3 { color: var(--player); }
+.cc.bot .cc-head h3 { color: var(--bot); }
+
+.cc-kind {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-left: 6px;
+}
+
+.cc-sub {
+  margin: 2px 0 0;
+  color: var(--muted);
+}
+
+.cc-close {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.cc-close:hover { color: var(--text); }
+
+.cc-live {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.cc-hp {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--panel2);
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+
+.cc-hp i {
+  display: block;
+  height: 100%;
+  background: #4dd4ac;
+}
+
+.cc-facts {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px 10px;
+  margin: 14px 0 12px;
+}
+
+.cc-facts div { display: flex; flex-direction: column; }
+.cc-facts dt { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.cc-facts dd { margin: 0; font-weight: 600; }
+
+.cc-gear {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 12px;
+}
+
+.cc-gear ul, .cc-weapons, .cc-profs ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cc-weapons {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0 8px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.cc-slot {
+  display: flex;
+  flex-direction: column;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border);
+  min-width: 0;
+}
+
+.cc-slot-label {
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.cc-item {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cc-item small {
+  color: var(--muted);
+  margin-left: 5px;
+  font-size: 10px;
+}
+
+.cc-item.empty { color: var(--border); }
+
+.cc-profs { margin-top: 12px; }
+.cc-profs h4, .cc-actions h4 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.cc-profs li { display: flex; justify-content: space-between; padding: 2px 0; }
+.cc-profs li span:last-child { color: var(--accent); }
+
+.cc-note {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 12px 0 0;
+}
+
+.cc-actions {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.cc-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.cc-buttons button, .cc-buttons select {
+  background: var(--panel2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.cc-buttons button:hover:not(:disabled) { border-color: var(--accent); }
+.cc-buttons button:disabled { color: var(--muted); cursor: default; }
+.cc-buttons button.danger { border-color: #7a3040; color: #ff8fab; }
+
+.cc-result {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.cc-result.done { color: #4dd4ac; }
+.cc-result.failed, .cc-result.timeout { color: #ff6b6b; }
+
+@media (max-width: 900px) {
+  .map-row { flex-direction: column; }
+  .cc { width: 100%; max-height: none; }
+}
