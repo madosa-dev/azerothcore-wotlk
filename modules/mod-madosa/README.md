@@ -93,6 +93,18 @@ are substantial enough to stand on their own).
   how, and its documented limits: the tooltip name/border and the in-world
   loot glow are rendered natively and stay the default Artifact gold, since
   that path never calls back into Lua).
+- **`addon/AdiBags_RecipeHint`**: an AdiBags plugin that marks every recipe
+  in the bags with the one thing you want to know about it - a green tick if
+  this character can learn it now, the skill number if a profession they have
+  is not high enough yet, a faint cross if it is already known, nothing if it
+  is another profession's or another class's. There is no API for
+  "learnable"; the game only says it the way it says it to the player, in the
+  tooltip, so the plugin reads a hidden tooltip and looks for the red
+  "Requires Tailoring (150)" and "Already known" lines - only above the "Use:"
+  line, because what follows is the crafted item's tooltip and its own red
+  level requirement is about the product. Client-side only; drop the folder
+  into `Interface/AddOns` next to AdiBags, and it appears in AdiBags' module
+  options.
 - **`src/mod_madosa_account_companions.cpp`**: makes every Vanity item's
   learn-spell account-wide - once any character on the account has learned
   one (used the item), every other character on that account knows it too

@@ -1,0 +1,8 @@
+## Interface: 30300
+## Title: AdiBags - Recipe Hint
+## Notes: Marks recipes in your bags: a green tick when this character can learn it, the skill it needs when a profession is too low, a faint cross when it is already known.
+## Author: madosa
+## Version: 1.0.0
+## Dependencies: AdiBags
+
+AdiBags_RecipeHint.lua
