@@ -19,26 +19,40 @@ export const MAP_IMAGES = {
   571: { src: '/maps/northrend.webp', width: 1248, height: 928 },
 }
 
-// Continent-wide world-coordinate bounding box per map, straight from
-// WorldMapArea.dbc's area_id=0 ("whole continent") rows - the same data the
-// client itself uses to place the world map at the top zoom level. Matches
-// the core's Map2ZoneCoordinates() convention: x is north/south, y is
-// west/east, and the client map swaps them (x -> vertical, y -> horizontal).
-export const MAP_BOUNDS = {
-  0: { x1: 11176.34375, x2: -15973.34375, y1: 18171.970703125, y2: -22569.2109375 },
-  1: { x1: 12799.900390625, x2: -11733.2998046875, y1: 17066.599609375, y2: -19733.2109375 },
-  530: { x1: 5821.359375, x2: -5821.359375, y1: 12996.0390625, y2: -4468.0390625 },
-  571: { x1: 10593.375, x2: -1240.8900146484375, y1: 9217.15234375, y2: -8534.24609375 },
+// The continent images are stitched from the client's minimap tiles
+// (textures/minimap/md5translate.trs), one 32 px square per 533.33-yard ADT
+// tile, cropped to the tiles that actually exist - so an image's edges are
+// tile boundaries, not the WorldMapArea.dbc continent rectangle. These are the
+// tile ranges each image covers: which column/row the top-left pixel is, and
+// how many of each fit in the picture.
+//
+// Plotting against the DBC rectangle instead was the bug that put dots in the
+// sea: for the Eastern Kingdoms that rectangle spans tile columns -2 to 74
+// while the picture holds columns 24 to 44, so everything was squeezed into
+// the middle third and drifted with distance from the centre.
+export const MAP_TILES = {
+  0: { colMin: 24, cols: 21, rowMin: 20, rows: 42 },
+  1: { colMin: 0, cols: 51, rowMin: 0, rows: 56 },
+  530: { colMin: 12, cols: 49, rowMin: 6, rows: 39 },
+  571: { colMin: 11, cols: 39, rowMin: 9, rows: 29 },
 }
 
-// Same transform as the core's Map2ZoneCoordinates(), just parameterised on
-// a continent's bounding box instead of a single zone's. Returns 0-100
-// percentages ready to use as CSS left/top on the continent map image.
-export function worldToContinentPct(mapId, posX, posY) {
-  const b = MAP_BOUNDS[mapId]
-  if (!b) return null
+// One ADT tile is 533.33 yards, and the grid is 64x64 with its origin at the
+// centre of the map: tile column = 32 - y / 533.33 (world y runs east to
+// west), tile row = 32 - x / 533.33 (world x runs south to north). The same
+// arithmetic the core's GridDefines use, in the other direction.
+const TILE_SIZE = 533.33333
 
-  const rawX = (posX - b.x1) / ((b.x2 - b.x1) / 100)
-  const rawY = (posY - b.y1) / ((b.y2 - b.y1) / 100)
-  return { pctX: rawY, pctY: rawX }
+// Returns 0-100 percentages ready to use as CSS left/top on the continent
+// image, or null for a map without a picture.
+export function worldToContinentPct(mapId, posX, posY) {
+  const t = MAP_TILES[mapId]
+  if (!t) return null
+
+  const col = 32 - posY / TILE_SIZE
+  const row = 32 - posX / TILE_SIZE
+  return {
+    pctX: ((col - t.colMin) / t.cols) * 100,
+    pctY: ((row - t.rowMin) / t.rows) * 100,
+  }
 }
