@@ -56,6 +56,7 @@
 // There is no respawn timer because nothing ever despawns, and a fresh character
 // finds every spot still holding what it always held.
 
+#include "mod_madosa_chronicle.h"
 #include "mod_madosa_settings.h"
 
 #include "CharacterDatabase.h"
@@ -70,6 +71,7 @@
 #include "Playerbots.h"
 #include "ScriptMgr.h"
 #include "StringFormat.h"
+#include "WorldSession.h"
 #include "WorldDatabase.h"
 
 #include <cmath>
@@ -479,7 +481,12 @@ public:
 
     void OnPlayerLogin(Player* player) override
     {
-        if (!GET_PLAYERBOT_AI(player))
+        // The session flag, not GET_PLAYERBOT_AI: mod-playerbots attaches the AI
+        // after login, from a queued world-thread operation, so at this point
+        // every bot still looks like a person - which is how this ended up
+        // running a query per bot login against its own comment. Only real
+        // players can open a cache, so a bot's claimed set is never asked about.
+        if (!player->GetSession() || !player->GetSession()->IsBot())
             LoadClaimedItems(player->GetGUID().GetCounter());
     }
 
@@ -551,6 +558,8 @@ public:
 
         player->SendNewItem(created, 1, true, false);
         RecordClaim(playerGuid, item);
+        MadosaChronicle::Record("worldforged", player, nullptr, int64(item),
+            created->GetTemplate() ? created->GetTemplate()->Name1 : "");
 
         // The chest stays. Claiming its item is recorded against the character,
         // not against the world, so the next click tells this player they have
