@@ -461,9 +461,22 @@ namespace
         return out;
     }
 
-    void RecordChestContents(uint64 chestId, ObjectGuid::LowType victim, std::vector<DroppedItem> const& dropped)
+    // The chest's gold rides in the same table as its items, as one row of its
+    // own: slot GOLD_SLOT, item 0. An insurance chest holds nothing but gold,
+    // and gold nobody claimed is no more allowed to vanish than an item is.
+    constexpr uint32 GOLD_SLOT = 255;
+
+    // Written *before* the items leave the victim's bags - see HandleHardcoreKill.
+    // Only for people: a bot's belongings are re-rolled by mod-playerbots
+    // anyway, and mailing them back would fill a mailbox nobody ever opens.
+    void RecordChestContents(uint64 chestId, Player const* victim, std::vector<DroppedItem> const& dropped,
+        uint32 gold)
     {
+        if (IsBotSession(victim))
+            return;
+
         time_t const now = GameTime::GetGameTime().count();
+        ObjectGuid::LowType const victimGuid = victim->GetGUID().GetCounter();
         for (size_t slot = 0; slot < dropped.size(); ++slot)
         {
             DroppedItem const& drop = dropped[slot];
@@ -471,9 +484,15 @@ namespace
                 "INSERT INTO character_hardcore_pvp_chest "
                 "(chest, slot, victim, created_at, item, count, random_property, suffix_factor, enchants) "
                 "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, '{}')",
-                chestId, uint32(slot), victim, uint32(now), drop.entry, uint32(drop.count),
+                chestId, uint32(slot), victimGuid, uint32(now), drop.entry, uint32(drop.count),
                 drop.randomPropertyId, drop.suffixFactor, EncodeEnchants(drop));
         }
+
+        if (gold)
+            CharacterDatabase.Execute(
+                "INSERT INTO character_hardcore_pvp_chest (chest, slot, victim, created_at, item, count, gold) "
+                "VALUES ({}, {}, {}, {}, 0, 0, {})",
+                chestId, GOLD_SLOT, victimGuid, uint32(now), gold);
     }
 
     // Whatever is still in the chest when it goes away goes back to the person
@@ -482,7 +501,7 @@ namespace
     void MailChestBack(uint64 chestId)
     {
         QueryResult result = CharacterDatabase.Query(
-            "SELECT victim, item, count, random_property, suffix_factor, enchants "
+            "SELECT victim, item, count, random_property, suffix_factor, enchants, gold "
             "FROM character_hardcore_pvp_chest WHERE chest = {} ORDER BY slot", chestId);
 
         if (!result)
@@ -490,10 +509,17 @@ namespace
 
         ObjectGuid::LowType victim = 0;
         std::vector<DroppedItem> items;
+        uint32 gold = 0;
         do
         {
             Field* fields = result->Fetch();
             victim = fields[0].Get<uint32>();
+
+            if (!fields[1].Get<uint32>())
+            {
+                gold += fields[6].Get<uint32>();
+                continue;
+            }
 
             DroppedItem drop;
             drop.entry = fields[1].Get<uint32>();
@@ -515,8 +541,11 @@ namespace
             items.push_back(drop);
         } while (result->NextRow());
 
-        // A mail holds MAX_MAIL_ITEMS, so a full chest needs more than one.
-        for (size_t start = 0; start < items.size(); start += MAX_MAIL_ITEMS)
+        // A mail holds MAX_MAIL_ITEMS, so a full chest needs more than one. The
+        // gold goes with the first; a chest of gold alone is one mail with no
+        // items at all.
+        size_t start = 0;
+        do
         {
             CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
             MailDraft draft("Spoils of the Fallen",
@@ -542,24 +571,35 @@ namespace
                 any = true;
             }
 
+            if (start == 0 && gold)
+            {
+                draft.AddMoney(gold);
+                any = true;
+            }
+
             if (any)
                 draft.SendMailTo(trans, MailReceiver(victim),
                     MailSender(MAIL_NORMAL, 0, MAIL_STATIONERY_GM), MAIL_CHECK_MASK_COPIED);
 
             CharacterDatabase.CommitTransaction(trans);
-        }
+            start = stop;
+        } while (start < items.size());
 
         CharacterDatabase.Execute("DELETE FROM character_hardcore_pvp_chest WHERE chest = {}", chestId);
 
-        LOG_INFO("module", "mod-madosa: Hardcore PvP - chest {} crumbled unclaimed, {} item(s) mailed back.",
-            chestId, uint32(items.size()));
+        LOG_INFO("module", "mod-madosa: Hardcore PvP - chest {} crumbled unclaimed, "
+            "{} item(s) and {} copper mailed back.", chestId, uint32(items.size()), gold);
     }
 
-    void SpawnDeathChest(Player* killer, Player* victim, std::vector<DroppedItem> const& dropped, uint32 gold = 0)
+    // Puts the chest into the world. The contents are already in the table by
+    // the time this runs, so if the map refuses the object nothing is lost -
+    // the caller mails the rows straight back.
+    bool SpawnDeathChest(uint64 chestId, Player* killer, Player* victim, std::vector<DroppedItem> const& dropped,
+        uint32 gold)
     {
         Map* map = victim->GetMap();
         if (!map)
-            return;
+            return false;
 
         GameObject* chest = new GameObject();
         G3D::Quat const rotation = G3D::Quat::fromAxisAngleRotation(G3D::Vector3::unitZ(), victim->GetOrientation());
@@ -570,7 +610,7 @@ namespace
             delete chest;
             LOG_ERROR("module", "mod-madosa: could not create gameobject {} (is hardcore_pvp.sql applied?)",
                 DEATH_CHEST_ENTRY);
-            return;
+            return false;
         }
 
         // The chest template carries no loot id, so nothing here is ever
@@ -600,23 +640,19 @@ namespace
         if (!map->AddToMap(chest))
         {
             delete chest;
-            return;
+            LOG_ERROR("module", "mod-madosa: map {} refused the death chest for {}", map->GetId(), victim->GetName());
+            return false;
         }
 
         time_t const now = GameTime::GetGameTime().count();
         DeathChest record;
-        record.id = nextChestId++;
+        record.id = chestId;
         record.mapId = map->GetId();
         record.victim = victim->GetGUID().GetCounter();
         record.owner = killer->GetGUID();
         record.ownerGroup = killer->GetGroup() ? killer->GetGroup()->GetGUID() : ObjectGuid::Empty;
         record.expiresAt = now + time_t(MadosaSettings::GetHardcorePvPChestLifetime()) * MINUTE;
         record.items = dropped;
-
-        // Written before the chest is announced to anyone, so even a crash in
-        // the same tick leaves the victim's belongings recoverable.
-        if (!dropped.empty())
-            RecordChestContents(record.id, record.victim, dropped);
 
         {
             std::lock_guard<std::mutex> lock(chestMutex);
@@ -625,6 +661,7 @@ namespace
 
         LOG_INFO("module", "mod-madosa: Hardcore PvP - {} killed {}, {} item(s) and {} copper dropped.",
             killer->GetName(), victim->GetName(), dropped.size(), gold);
+        return true;
     }
 
     // Bots have a session too, so "is this worth telling anyone" is a question
@@ -635,6 +672,11 @@ namespace
             ChatHandler(player->GetSession()).PSendSysMessage("{}", message);
     }
 
+    // The order here is the safety: the contents are written to the table
+    // first, the items leave the bags second, the chest appears third. Whatever
+    // fails after the first step can only ever delay the return, not lose it.
+    // The first version did it the other way round - destroy, then spawn, then
+    // record - and a chest the map refused would have taken the bags with it.
     void HandleHardcoreKill(Player* killer, Player* victim)
     {
         // Insurance pays out instead of the bags, and is spent doing it. The
@@ -652,7 +694,14 @@ namespace
             }
             SaveState(victim->GetGUID().GetCounter(), state);
 
-            SpawnDeathChest(killer, victim, {}, gold * GOLD);
+            uint64 const chestId = nextChestId++;
+            RecordChestContents(chestId, victim, {}, gold * GOLD);
+            if (!SpawnDeathChest(chestId, killer, victim, {}, gold * GOLD))
+            {
+                MailChestBack(chestId);
+                return;
+            }
+
             MadosaChronicle::Record("insurance", killer, victim, gold, "");
             Tell(victim, Acore::StringFormat("Your insurance paid out: {} gold instead of your belongings. "
                 "You are no longer insured.", gold));
@@ -673,7 +722,9 @@ namespace
         wanted = std::min<uint32>(wanted, MAX_NR_LOOT_ITEMS);
         wanted = std::min<uint32>(wanted, uint32(candidates.size()));
 
+        std::vector<Item*> taken;
         std::vector<DroppedItem> dropped;
+        taken.reserve(wanted);
         dropped.reserve(wanted);
         for (uint32 i = 0; i < wanted; ++i)
         {
@@ -689,12 +740,25 @@ namespace
             drop.suffixFactor = item->GetItemSuffixFactor();
             for (uint8 slot = 0; slot < MAX_ENCHANTMENT_SLOT; ++slot)
                 drop.enchants[slot] = item->GetEnchantmentId(EnchantmentSlot(slot));
-            dropped.push_back(drop);
 
-            victim->DestroyItem(item->GetBagSlot(), item->GetSlot(), true);
+            taken.push_back(item);
+            dropped.push_back(drop);
         }
 
-        SpawnDeathChest(killer, victim, dropped);
+        uint64 const chestId = nextChestId++;
+        RecordChestContents(chestId, victim, dropped, 0);
+
+        for (Item* item : taken)
+            victim->DestroyItem(item->GetBagSlot(), item->GetSlot(), true);
+
+        if (!SpawnDeathChest(chestId, killer, victim, dropped, 0))
+        {
+            MailChestBack(chestId);
+            Tell(victim, "Hardcore PvP: your belongings could not be laid down where you fell - "
+                "they are on their way back to you by mail.");
+            return;
+        }
+
         MadosaChronicle::Record("chest", killer, victim, int64(dropped.size()), "");
 
         Tell(victim, Acore::StringFormat("Hardcore PvP: {} of your belongings spilled where you fell.",
@@ -1005,6 +1069,7 @@ public:
             PLAYERHOOK_ON_PVP_KILL,
             PLAYERHOOK_ON_LOOT_ITEM,
             PLAYERHOOK_ON_PLAYER_RESURRECT,
+            PLAYERHOOK_ON_BEFORE_LOOT_MONEY,
         }) { }
 
     void OnPlayerLogin(Player* player) override
@@ -1138,6 +1203,33 @@ public:
         }
 
         HandleHardcoreKill(killer, victim);
+    }
+
+    // The gold's counterpart to OnPlayerLootItem below: taking it out of the
+    // chest takes its row out of the table, so it is not also mailed back.
+    // Runs before the core zeroes loot->gold, which is the only reason the
+    // amount is still readable here.
+    void OnPlayerBeforeLootMoney(Player* player, Loot* loot) override
+    {
+        if (!loot || !loot->gold)
+            return;
+
+        ObjectGuid const lootguid = player->GetLootGUID();
+        if (!lootguid.IsGameObject())
+            return;
+
+        uint64 chestId = 0;
+        {
+            std::lock_guard<std::mutex> lock(chestMutex);
+            auto chest = chests.find(lootguid);
+            if (chest == chests.end())
+                return;
+
+            chestId = chest->second.id;
+        }
+
+        CharacterDatabase.Execute(
+            "DELETE FROM character_hardcore_pvp_chest WHERE chest = {} AND slot = {}", chestId, GOLD_SLOT);
     }
 
     // Loot cannot express an enchantment, so the ones recorded when the item

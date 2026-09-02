@@ -78,7 +78,8 @@ PREPARE s FROM @stmt; EXECUTE s; DEALLOCATE PREPARE s;
 -- the normal case - the items were destroyed on the victim and then quietly
 -- ceased to exist when the chest crumbled. The victim lost, and nobody won.
 --
--- Now every dropped stack is written here, removed again as it is looted, and
+-- Now every dropped stack - and the gold of an insurance chest - is written
+-- here *before* it leaves the victim, removed again as it is looted, and
 -- whatever is left when the chest expires is mailed back to the victim. Rows
 -- surviving a restart are mailed back at the next startup, which is what makes
 -- this safe against a crash as well.
@@ -92,6 +93,17 @@ CREATE TABLE IF NOT EXISTS `character_hardcore_pvp_chest` (
   `random_property` INT NOT NULL DEFAULT 0,
   `suffix_factor` INT UNSIGNED NOT NULL DEFAULT 0,
   `enchants` VARCHAR(255) NOT NULL DEFAULT '',
+  `gold` INT UNSIGNED NOT NULL DEFAULT 0,
   PRIMARY KEY (`chest`, `slot`),
   KEY `victim` (`victim`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- The chest's gold is one row of its own (slot 255, item 0), so an insurance
+-- payout nobody collected goes back the same way an item does. Guarded like
+-- the migrations above, for tables created before the column existed.
+SET @stmt := IF((SELECT COUNT(*) FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'character_hardcore_pvp_chest'
+                   AND COLUMN_NAME = 'gold') = 0,
+    'ALTER TABLE `character_hardcore_pvp_chest` ADD COLUMN `gold` INT UNSIGNED NOT NULL DEFAULT 0 AFTER `enchants`',
+    'DO 0');
+PREPARE s FROM @stmt; EXECUTE s; DEALLOCATE PREPARE s;

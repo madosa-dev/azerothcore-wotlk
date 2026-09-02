@@ -380,15 +380,20 @@ are substantial enough to stand on their own).
   tell beforehand whether a target is carrying anything, and how a Hardcore
   player knows they are fair game. Everything in the bags can drop, soulbound
   included; worn equipment, quest items, the bags themselves, keys, the
-  Hearthstone, conjured items and heirlooms never do. The killer and their
-  group have the chest for two minutes, then it is free for all - the victim
-  can run back for what is left - and it is gone after five.
+  Hearthstone, conjured items and heirlooms never do. The killer, their
+  group and the victim may open the chest at once - the victim's own things are
+  theirs to race for - and anyone else only if they are in High-Risk
+  themselves. It is gone after five minutes.
 
-  **Nothing is lost to a chest nobody opened.** Every dropped stack is written
-  to `character_hardcore_pvp_chest` before the chest is even visible, removed
-  again as it is looted, and whatever is left when the chest crumbles is mailed
-  back to the victim. Leftover rows are mailed back at the next startup, which
-  covers a crash as well as a clean restart.
+  **Nothing is lost to a chest nobody opened.** Every dropped stack - and the
+  gold of an insurance chest - is written to `character_hardcore_pvp_chest`
+  *before* it leaves the victim's bags, removed again as it is looted, and
+  whatever is left when the chest crumbles is mailed back to the victim. If
+  the map refuses the chest, the same rows are mailed back on the spot.
+  Leftover rows are mailed back at the next startup, which covers a crash as
+  well as a clean restart. Bots are the one exception: their belongings are
+  never recorded, because mod-playerbots re-rolls them anyway and a mailbox no
+  bot ever opens would only grow.
 
   This was found the hard way and is worth stating plainly: the first version
   kept a chest's contents in memory only and gave the killer two minutes of
