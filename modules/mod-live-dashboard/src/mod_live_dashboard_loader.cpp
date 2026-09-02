@@ -17,9 +17,13 @@
 
 // From SC
 void AddSC_live_dashboard();
+void AddSC_live_chronicle();
+void AddSC_live_admin();
 
 // Add all
 void Addmod_live_dashboardScripts()
 {
     AddSC_live_dashboard();
+    AddSC_live_chronicle();
+    AddSC_live_admin();
 }

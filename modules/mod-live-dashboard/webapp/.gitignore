@@ -1,2 +1,5 @@
 # Vite build output (run `npm run build` in frontend/ to regenerate)
 /dist
+
+# The admin console secret - generated per install, never committed.
+.admin-token

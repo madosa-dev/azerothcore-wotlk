@@ -16,11 +16,15 @@ The actual UI is the Vite/React app in frontend/. Two ways to run this:
 """
 
 import argparse
+import base64
+import os
+import secrets
 import json
 import mimetypes
 import re
 import subprocess
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs
 from pathlib import Path
 
 DIST_DIR = Path(__file__).resolve().parent / "dist"
@@ -34,6 +38,28 @@ RACE_NAMES = {
     1: "Human", 2: "Orc", 3: "Dwarf", 4: "Night Elf", 5: "Undead",
     6: "Tauren", 7: "Gnome", 8: "Troll", 10: "Blood Elf", 11: "Draenei",
 }
+
+
+TOKEN_FILE = Path(__file__).resolve().parent / ".admin-token"
+
+
+def load_or_create_token() -> str:
+    """The shared secret the admin endpoints require.
+
+    Generated on first run and kept in a file next to this script, mode 0600.
+    Everything read-only stays open the way it always was - it is only the
+    endpoints that can change the running server that are gated, because those
+    run with console rights on the other side.
+    """
+    if TOKEN_FILE.exists():
+        token = TOKEN_FILE.read_text(encoding="utf-8").strip()
+        if token:
+            return token
+
+    token = secrets.token_urlsafe(24)
+    TOKEN_FILE.write_text(token, encoding="utf-8")
+    os.chmod(TOKEN_FILE, 0o600)
+    return token
 
 
 def find_default_conf() -> Path:
@@ -73,7 +99,11 @@ class DB:
         )
         if proc.returncode != 0:
             raise RuntimeError(proc.stderr.strip())
-        rows = [line.split("\t") for line in proc.stdout.splitlines() if line]
+        # Split on newlines only. str.splitlines() also breaks on \r, and
+        # console output captured from the game process carries carriage
+        # returns inside a single field - which tore one row into several and
+        # left the caller indexing past the end of it.
+        rows = [line.split("\t") for line in proc.stdout.split("\n") if line]
         return rows
 
     def positions(self) -> list:
@@ -105,6 +135,128 @@ class DB:
                 "guild": guild_name,
             })
         return out
+
+    def chronicle(self, limit: int = 200, kind: str = "") -> list:
+        """The recent past, newest first."""
+        limit = max(1, min(int(limit), 500))
+        where = ""
+        if kind:
+            safe = "".join(c for c in kind if c.isalnum() or c == "_")[:32]
+            if safe:
+                where = f"WHERE kind = '{safe}'"
+        rows = self.query(
+            "SELECT id, at, kind, actor, actor_bot, actor_class, actor_level, target, "
+            f"target_bot, zone, map, value, IFNULL(detail,'') FROM live_chronicle {where} "
+            f"ORDER BY id DESC LIMIT {limit}",
+            self.characters,
+        )
+        return _chronicle_rows(rows)
+
+    def chronicle_summary(self) -> dict:
+        """The numbers the chronicle header shows: how busy the realm has been,
+        and who has been busiest."""
+        counts = self.query(
+            "SELECT kind, COUNT(*), SUM(at > UNIX_TIMESTAMP() - 86400) "
+            "FROM live_chronicle GROUP BY kind ORDER BY 2 DESC",
+            self.characters,
+        )
+        killers = self.query(
+            "SELECT actor, actor_bot, COUNT(*) FROM live_chronicle "
+            "WHERE kind = 'pvp_kill' GROUP BY actor, actor_bot ORDER BY 3 DESC LIMIT 8",
+            self.characters,
+        )
+        finders = self.query(
+            "SELECT actor, actor_bot, COUNT(*) FROM live_chronicle "
+            "WHERE kind = 'worldforged' GROUP BY actor, actor_bot ORDER BY 3 DESC LIMIT 8",
+            self.characters,
+        )
+        span = self.query(
+            "SELECT IFNULL(MIN(at),0), IFNULL(MAX(at),0), COUNT(*) FROM live_chronicle",
+            self.characters,
+        )
+        return {
+            "kinds": [
+                {"kind": k, "total": int(t or 0), "today": int(d or 0)}
+                for k, t, d in (r for r in counts if len(r) >= 3)
+            ],
+            "top_killers": [
+                {"name": n, "bot": int(b or 0), "count": int(c or 0)}
+                for n, b, c in (r for r in killers if len(r) >= 3)
+            ],
+            "top_finders": [
+                {"name": n, "bot": int(b or 0), "count": int(c or 0)}
+                for n, b, c in (r for r in finders if len(r) >= 3)
+            ],
+            "first": int(span[0][0]) if span else 0,
+            "last": int(span[0][1]) if span else 0,
+            "total": int(span[0][2]) if span else 0,
+        }
+
+    def queue_command(self, command: str) -> int:
+        """Hands a command to the game process and returns its queue id.
+
+        Nothing is executed here - the module picks the row up on its next tick.
+        Quoting is the only sharp edge, and it is handled the same way the rest
+        of this file handles it.
+        """
+        safe = command.replace("\\", "\\\\").replace("'", "\\'")[:500]
+
+        # Both statements in one invocation on purpose: query() spawns a fresh
+        # mysql process each time, and LAST_INSERT_ID() is per connection - ask
+        # for it separately and the answer is always 0.
+        rows = self.query(
+            "INSERT INTO live_dashboard_commands (created_at, command) "
+            f"VALUES (UNIX_TIMESTAMP(), '{safe}'); SELECT LAST_INSERT_ID();",
+            self.characters,
+        )
+        return int(rows[-1][0]) if rows and rows[-1] else 0
+
+    def command_result(self, cid: int) -> dict:
+        """Command output is base64 on the wire.
+
+        It is console output: multi-line, and carrying whatever carriage
+        returns and tabs the formatting used. The tab-separated text the mysql
+        CLI speaks cannot express that - a two-line answer arrives as two rows
+        and the caller indexes past the end of the first. Base64 sidesteps the
+        transport entirely rather than guessing at an escaping scheme.
+        """
+        rows = self.query(
+            # MySQL's TO_BASE64 wraps at 76 characters, which would put the
+            # value back across several lines - the exact problem base64 is
+            # here to avoid.
+            "SELECT id, status, REPLACE(REPLACE(TO_BASE64(IFNULL(output,'')), '\\n', ''), '\\r', ''), "
+            "executed_at, command "
+            f"FROM live_dashboard_commands WHERE id = {int(cid)}",
+            self.characters,
+        )
+        if not rows or len(rows[0]) < 5:
+            return {"id": int(cid), "status": "unknown", "output": "", "command": ""}
+
+        r = rows[0]
+        try:
+            output = base64.b64decode(r[2]).decode("utf-8", "replace")
+        except Exception:
+            output = ""
+
+        return {
+            "id": int(r[0]),
+            "status": r[1],
+            "output": output,
+            "executed_at": int(r[3] or 0),
+            "command": r[4],
+        }
+
+    def command_history(self, limit: int = 30) -> list:
+        rows = self.query(
+            "SELECT id, created_at, command, status, executed_at "
+            f"FROM live_dashboard_commands ORDER BY id DESC LIMIT {max(1, min(int(limit), 200))}",
+            self.characters,
+        )
+        return [
+            {"id": int(r[0]), "created_at": int(r[1]), "command": r[2],
+             "status": r[3], "executed_at": int(r[4] or 0)}
+            for r in rows if len(r) >= 5
+        ]
 
     def stats(self) -> dict:
         counts = self.query(
@@ -148,6 +300,26 @@ class DB:
         }
 
 
+CHRONICLE_COLUMNS = ("id", "at", "kind", "actor", "actor_bot", "actor_class",
+                     "actor_level", "target", "target_bot", "zone", "map", "value", "detail")
+
+
+def _chronicle_rows(rows: list) -> list:
+    out = []
+    for r in rows:
+        if len(r) < len(CHRONICLE_COLUMNS):
+            continue
+        e = dict(zip(CHRONICLE_COLUMNS, r))
+        for k in ("id", "at", "actor_bot", "actor_class", "actor_level",
+                  "target_bot", "map", "value"):
+            try:
+                e[k] = int(e[k])
+            except (TypeError, ValueError):
+                e[k] = 0
+        out.append(e)
+    return out
+
+
 def resolve_static_file(url_path: str) -> Path | None:
     """Maps a request path to a file under DIST_DIR, defaulting to index.html
     for `/` and refusing to escape DIST_DIR."""
@@ -158,7 +330,7 @@ def resolve_static_file(url_path: str) -> Path | None:
     return candidate if candidate.is_file() else None
 
 
-def make_handler(db: DB):
+def make_handler(db: DB, token: str):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt, *args):
             pass
@@ -189,12 +361,44 @@ def make_handler(db: DB):
             self.end_headers()
             self.wfile.write(body)
 
+        def _deny(self, code, message):
+            body = json.dumps({"error": message}).encode("utf-8")
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _authorised(self) -> bool:
+            """Constant-time compare, and the header is the only accepted place
+            for the token - a query string would end up in logs and history."""
+            supplied = self.headers.get("X-Admin-Token", "")
+            return secrets.compare_digest(supplied, token)
+
         def do_GET(self):
             try:
-                if self.path == "/api/positions":
+                path, _, raw_query = self.path.partition("?")
+                query = parse_qs(raw_query)
+
+                if path == "/api/positions":
                     self._json(db.positions())
-                elif self.path == "/api/stats":
+                elif path == "/api/stats":
                     self._json(db.stats())
+                elif path == "/api/chronicle":
+                    self._json(db.chronicle(
+                        limit=int(query.get("limit", [200])[0] or 200),
+                        kind=query.get("kind", [""])[0],
+                    ))
+                elif path == "/api/chronicle/summary":
+                    self._json(db.chronicle_summary())
+                elif path == "/api/admin/result":
+                    if not self._authorised():
+                        return self._deny(403, "admin token required")
+                    self._json(db.command_result(int(query.get("id", [0])[0] or 0)))
+                elif path == "/api/admin/history":
+                    if not self._authorised():
+                        return self._deny(403, "admin token required")
+                    self._json(db.command_history())
                 else:
                     self._static()
             except Exception as e:
@@ -202,6 +406,30 @@ def make_handler(db: DB):
                 self.send_header("Content-Type", "text/plain")
                 self.end_headers()
                 self.wfile.write(str(e).encode("utf-8"))
+
+        def do_POST(self):
+            try:
+                path = self.path.split("?", 1)[0]
+                if path != "/api/admin/command":
+                    return self._deny(404, "not found")
+
+                if not self._authorised():
+                    return self._deny(403, "admin token required")
+
+                length = int(self.headers.get("Content-Length") or 0)
+                if length <= 0 or length > 4096:
+                    return self._deny(400, "empty or oversized request")
+
+                payload = json.loads(self.rfile.read(length).decode("utf-8"))
+                command = str(payload.get("command", "")).strip()
+                if not command:
+                    return self._deny(400, "no command given")
+
+                # A leading dot is how a GM types it and how every button here
+                # is labelled; the console itself does not want one.
+                self._json({"id": db.queue_command(command.lstrip("."))})
+            except Exception as e:
+                self._deny(500, str(e))
 
     return Handler
 
@@ -218,8 +446,14 @@ def main():
         raise SystemExit(f"Config not found: {conf_path} (pass --conf explicitly)")
 
     db = DB(conf_path)
-    server = ThreadingHTTPServer((args.host, args.port), make_handler(db))
+    token = load_or_create_token()
+    server = ThreadingHTTPServer((args.host, args.port), make_handler(db, token))
     print(f"Live dashboard: http://{args.host}:{args.port}  (DB config: {conf_path})")
+    print(f"Admin token:    {token}")
+    print(f"                (kept in {TOKEN_FILE}; delete that file to roll it)")
+    if args.host not in ("127.0.0.1", "localhost", "::1"):
+        print("WARNING: bound beyond localhost. The admin console runs commands with")
+        print("         console rights - only do this on a network you trust.")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
