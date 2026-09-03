@@ -874,23 +874,54 @@ namespace
             itr = now >= itr->second ? recentKills.erase(itr) : std::next(itr);
     }
 
-    // Player::UpdateFFAPvPState() clears the flag on every area change; this is
-    // where traitors get it back. Only traitors are visited, and only real ones
-    // exist, so the loop is over a handful of players at most.
-    void ReassertTraitorFlags()
+    // Both flags get cleared behind the mode's back, so both are put back here.
+    //
+    // Player::UpdateFFAPvPState() drops the FFA byte on every area change; that
+    // is where traitors get it back.
+    //
+    // The PvP flag is taken by mod-playerbots rather than by the core: random
+    // bot upkeep calls SetPvP(sWorld->IsPvPRealm()) both right after login and
+    // on every Refresh() (RandomPlayerbotMgr.cpp:2095 and :2660), which on a
+    // PvE realm (GameType = 0) unflags the bot our login hook just flagged. The
+    // bot then wears the High-Risk mark while nobody can attack it - all of the
+    // reward and none of the risk - so a flagged mode is re-asserted the same
+    // way treason is. Only players in a mode are visited, and a character in a
+    // sanctuary is skipped rather than fought over: there the core is right.
+    void ReassertModeFlags()
     {
-        std::vector<ObjectGuid::LowType> traitors;
+        struct Pending
+        {
+            ObjectGuid::LowType guid;
+            bool flagged;
+            bool traitor;
+        };
+
+        std::vector<Pending> pending;
         {
             std::shared_lock<std::shared_mutex> lock(statesMutex);
             for (auto const& [guid, state] : states)
-                if (state.traitor)
-                    traitors.push_back(guid);
+                if (state.traitor || state.mode != MadosaHardcorePvP::RISK_MODE_PVE)
+                    pending.push_back({ guid, state.mode != MadosaHardcorePvP::RISK_MODE_PVE, state.traitor });
         }
 
-        for (ObjectGuid::LowType guid : traitors)
-            if (Player* player = ObjectAccessor::FindPlayerByLowGUID(guid))
-                if (!player->IsFFAPvP() && !player->pvpInfo.IsInNoPvPArea)
-                    ApplyFFA(player, true);
+        for (Pending const& entry : pending)
+        {
+            Player* player = ObjectAccessor::FindPlayerByLowGUID(entry.guid);
+            if (!player || player->pvpInfo.IsInNoPvPArea)
+                continue;
+
+            if (entry.flagged && !player->IsPvP())
+            {
+                // Same pair as ApplyMarks(): the player flag so friendly
+                // territory does not start the five-minute unflag timer, the
+                // override so the flag goes on now rather than being requested.
+                player->SetPlayerFlag(PLAYER_FLAGS_IN_PVP);
+                player->UpdatePvP(true, true);
+            }
+
+            if (entry.traitor && !player->IsFFAPvP())
+                ApplyFFA(player, true);
+        }
     }
 }
 
@@ -1500,7 +1531,7 @@ public:
             return;
 
         ExpireChests();
-        ReassertTraitorFlags();
+        ReassertModeFlags();
         PruneRecentKills();
     }
 };
