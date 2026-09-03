@@ -425,9 +425,31 @@ are substantial enough to stand on their own).
     reject the rest anyway, but not before each had taken a frame and a slot off
     the pin cap, and since the zone list is alphabetical the two continents
     interleave, so the cap would have eaten into the pins being looked at.
-  - `/wfa` toggles the pins, `/wfa sync` re-asks the server. The panel on the
-    world map carries the zone's "N of M left here" count and filters for hiding
-    claimed finds, minimum quality, minimap pins and continent maps.
+  - **A zone map and a continent map want different markers.** On a zone map
+    every find gets its own pin, bucketed into a grid one pin wide so two spots
+    a few yards apart become one marker with a count rather than two icons drawn
+    on top of each other. A continent gets **one marker per zone**, at the middle
+    of that zone's finds - drawing them individually there was what made the
+    first version unusable (753 icons stacked over Kalimdor), and grid clustering
+    does not save it, because the points are genuinely spread out. It is also the
+    question actually being asked at that zoom: not "where exactly" but "which
+    zone is worth going to". Continent markers are off by default.
+  - **Counted in distinct items, not in spots.** Claiming is per item, so
+    several places in a zone holding the same one are one thing to collect;
+    a marker that would list it twice lists it once, and "N of M left here"
+    means how many things there are still to take.
+  - **Pins are children of `WorldMapButton`, not `WorldMapDetailFrame`.** The
+    latter is the obvious parent and holds the map art, but `WorldMapButton`
+    covers the whole map on top of it and takes every mouse event - pins under
+    the detail frame draw perfectly and never show a tooltip, which looks like a
+    broken tooltip and is not. Blizzard's own POIs parent to `WorldMapButton` for
+    the same reason. The *anchor* stays the detail frame, whose size the
+    fractions are relative to.
+  - Options live in a right-click menu on one small button in the map's header
+    bar next to Zoom Out - a panel floating over the map hides the part of the
+    map it sits on, which for a map addon is a poor trade. Right-clicking any
+    pin opens the same menu. `/wfa` toggles the pins, `/wfa sync` re-asks the
+    server.
 
 - **`hardcore_pvp.sql` + `src/mod_madosa_hardcore_pvp.cpp` +
   `src/mod_madosa_hardcore_pvp_loot.cpp`**: **Hardcore PvP**, after Ascension

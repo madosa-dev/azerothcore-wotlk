@@ -17,30 +17,62 @@
 -- so the map is already right on the next login before the sync arrives, and a
 -- claim made this session is pushed as it happens.
 --
--- Placement is Astrolabe's
--- ------------------------
--- Data.lua stores zone-relative fractions, which are only meaningful on that
--- one zone map. Astrolabe translates them onto whatever map is open - zone,
--- continent or the world - and keeps minimap pins positioned as the player
--- moves, so neither of those is reimplemented here. Without Astrolabe the addon
--- still draws zone maps correctly and simply leaves the minimap alone.
+-- Pins go under WorldMapButton, not WorldMapDetailFrame
+-- ----------------------------------------------------
+-- The obvious parent is WorldMapDetailFrame, the frame holding the map art.
+-- Pins parented there draw correctly and never receive a mouse event, because
+-- WorldMapButton covers the whole map on top of it and takes them all - which
+-- looks exactly like a broken tooltip and is not. Blizzard's own POIs and every
+-- map addon on this client parent to WorldMapButton for that reason; the
+-- *anchor* stays WorldMapDetailFrame, since that is the frame whose size the
+-- fractions are relative to.
 --
--- Mapster is not involved: it rescales and reskins WorldMapFrame, and pins are
--- children of WorldMapDetailFrame, so they follow it wherever it goes.
+-- Two kinds of map, two kinds of marker
+-- -------------------------------------
+-- On a *zone* map the individual spot is the whole point, so every find gets
+-- its own pin; they are bucketed into a grid one pin wide first, so two finds
+-- a few yards apart become one marker with a count instead of two icons drawn
+-- on top of each other. A grid rather than true proximity clustering: one pass
+-- instead of n-squared, on a refresh that runs whenever the map updates, and
+-- the seam where two points fall either side of a cell boundary costs one extra
+-- marker nobody will notice.
+--
+-- On a *continent* map the individual spot is meaningless - it is a few pixels
+-- across - and drawing them all was what made the first version unusable: 753
+-- icons over Kalimdor, stacked four deep. Grid clustering does not save it
+-- either, because the points are genuinely spread out; it only makes the wall
+-- slightly thinner. So a continent shows **one marker per zone**, at the middle
+-- of that zone's finds, carrying the count and listing what is there. That is
+-- also the question actually being asked at that zoom - not "where exactly" but
+-- "which zone is worth going to".
+--
+-- Astrolabe does the translation - a zone fraction is only meaningful on that
+-- one zone map, and it knows how to put it on a continent. Without Astrolabe
+-- the addon still draws zone maps correctly and leaves the rest alone.
+--
+-- Everything else is in a right-click menu on one small button in the map's
+-- header bar, next to Zoom Out. A panel floating over the map hid the part of
+-- the map it sat on, which for a map addon is a poor trade.
+--
+-- Mapster is not involved: it rescales and reskins WorldMapFrame, and the pins
+-- are anchored to frames inside it, so they follow wherever it puts them.
 
 local _, ns = ...
 
 local ADDON_PREFIX = "WFATLAS"
 local FIELD_SEP = "~"
 
--- A continent map already carries every zone's pins at once. The cap is a guard
--- against a pathological case, not an expected limit: Eastern Kingdoms, the
--- busiest map, comes to about 800.
-local MAX_WORLD_PINS = 1200
-
-local PIN_SIZE = 14
+local PIN_SIZE = 13
 local MINIMAP_PIN_SIZE = 11
-local PIN_BORDER = 3
+local PIN_BORDER = 2
+
+-- Grid cell for clustering, in screen pixels. Slightly larger than a pin, so
+-- two markers never touch.
+local CLUSTER_PX = 16
+
+-- Enough rows that a dense cluster is described rather than merely counted,
+-- few enough that the tooltip stays on screen.
+local TOOLTIP_ITEMS = 12
 
 -- A pin wears the icon of the item lying under it, so the map says what is
 -- there and not merely that something is. GetItemIcon() answers from the
@@ -61,7 +93,9 @@ local defaults = {
     enabled = true,
     minimap = true,
     hideClaimed = true,
-    continentPins = true,
+    -- Off by default: a continent carries every zone's finds at once, and even
+    -- clustered that is a busier map than it is a useful one.
+    continentPins = false,
     minQuality = 0,      -- 0 shows everything; 4 shows epics only
     claimed = {},        -- item id -> true, as the server last reported it
 }
@@ -105,7 +139,7 @@ local function ItemInfo(itemID)
 end
 
 -- Everything the pin lists have to agree on: the map, the minimap and the
--- counter must never disagree about whether a spot is worth showing.
+-- counts must never disagree about whether a spot is worth showing.
 local function IsVisible(itemID)
     if db.hideClaimed and db.claimed[itemID] then return false end
 
@@ -127,13 +161,26 @@ local function ZonePoints(entry)
     end
 end
 
+-- Counted in distinct items, not in spots. Claiming is per item - taking a
+-- Silverbound Dagger at one spot finishes every other spot holding one - so
+-- "how many are left here" can only honestly mean how many things there are
+-- still to collect, and several places in a zone hold the same item.
 local function ZoneCounts(entry)
-    local shown, total = 0, 0
+    local seen, shown, total = {}, 0, 0
     for _, _, itemID in ZonePoints(entry) do
-        total = total + 1
-        if not db.claimed[itemID] then shown = shown + 1 end
+        if not seen[itemID] then
+            seen[itemID] = true
+            total = total + 1
+            if not db.claimed[itemID] then shown = shown + 1 end
+        end
     end
     return shown, total
+end
+
+local function ZoneEntryForTexture(texture)
+    for _, entry in ipairs(ns.zones) do
+        if entry.texture == texture then return entry end
+    end
 end
 
 ----------------------------------------------------------------------------
@@ -143,44 +190,93 @@ end
 local worldPins, worldPinsUsed = {}, 0
 local minimapPins, minimapPinsUsed = {}, 0
 
+local OpenMenu  -- defined with the menu, used by the pin handlers
+
+local function AddItemLine(itemID, claimedNote)
+    local info = ItemInfo(itemID)
+    local name = info and info[1] or ("Item " .. itemID)
+    local color = info and ITEM_QUALITY_COLORS[info[2]] or ITEM_QUALITY_COLORS[1]
+
+    if claimedNote and db.claimed[itemID] then
+        GameTooltip:AddDoubleLine(name, "claimed", color.r, color.g, color.b, 0.5, 0.5, 0.5)
+    else
+        GameTooltip:AddLine(name, color.r, color.g, color.b)
+    end
+end
+
 local function PinTooltip(pin)
     GameTooltip:SetOwner(pin, "ANCHOR_RIGHT")
 
-    local info = ItemInfo(pin.itemID)
-    local name = info and info[1] or ("Item " .. pin.itemID)
-    local color = info and ITEM_QUALITY_COLORS[info[2]] or ITEM_QUALITY_COLORS[1]
-
-    GameTooltip:AddLine(name, color.r, color.g, color.b)
-    if info then
-        local slot = ns.slotNames[info[4]]
-        GameTooltip:AddLine(string.format("Item Level %d%s", info[3],
-            slot and (" - " .. slot) or ""), 0.8, 0.8, 0.8)
-    end
-
-    if db.claimed[pin.itemID] then
-        GameTooltip:AddLine("Already claimed on this character", 0.5, 0.5, 0.5)
-    else
-        GameTooltip:AddLine("Worldforged - not yet claimed", 0.1, 1.0, 0.1)
-    end
-
-    -- The real tooltip, if the client has the item cached; the server sends it
-    -- on first sight, so this fills in a moment after the first hover.
-    local link = select(2, GetItemInfo(pin.itemID))
-    if link then
+    local items = pin.items
+    if pin.zoneName then
+        GameTooltip:AddLine(pin.zoneName, 1, 0.82, 0)
+        GameTooltip:AddLine(string.format("%d Worldforged %s here", #items,
+            #items == 1 and "find" or "finds"), 1, 1, 1)
         GameTooltip:AddLine(" ")
-        GameTooltip:SetHyperlink(link)
+
+        for i = 1, math.min(#items, TOOLTIP_ITEMS) do
+            AddItemLine(items[i], true)
+        end
+        if #items > TOOLTIP_ITEMS then
+            GameTooltip:AddLine(string.format("and %d more", #items - TOOLTIP_ITEMS), 0.6, 0.6, 0.6)
+        end
+
+    elseif #items == 1 then
+        local itemID = items[1]
+        local info = ItemInfo(itemID)
+
+        AddItemLine(itemID)
+        if info then
+            local slot = ns.slotNames[info[4]]
+            GameTooltip:AddLine(string.format("Item Level %d%s", info[3],
+                slot and (" - " .. slot) or ""), 0.8, 0.8, 0.8)
+        end
+
+        if db.claimed[itemID] then
+            GameTooltip:AddLine("Already claimed on this character", 0.5, 0.5, 0.5)
+        else
+            GameTooltip:AddLine("Worldforged - not yet claimed", 0.1, 1.0, 0.1)
+        end
+
+        -- The real tooltip, if the client has the item cached; the server sends
+        -- it on first sight, so this fills in a moment after the first hover.
+        local link = select(2, GetItemInfo(itemID))
+        if link then
+            GameTooltip:AddLine(" ")
+            GameTooltip:SetHyperlink(link)
+        end
+    else
+        GameTooltip:AddLine(string.format("%d Worldforged finds here", #items), 1, 0.82, 0)
+        GameTooltip:AddLine(" ")
+
+        for i = 1, math.min(#items, TOOLTIP_ITEMS) do
+            AddItemLine(items[i], true)
+        end
+
+        if #items > TOOLTIP_ITEMS then
+            GameTooltip:AddLine(string.format("and %d more", #items - TOOLTIP_ITEMS), 0.6, 0.6, 0.6)
+        end
     end
 
+    GameTooltip:AddLine(" ")
+    GameTooltip:AddLine("Right-click for options", 0.5, 0.5, 0.5)
     GameTooltip:Show()
+end
+
+local function PinClick(pin, button)
+    if button == "RightButton" then
+        OpenMenu(pin)
+    end
 end
 
 local function AcquirePin(pool, used, parent, size)
     local pin = pool[used]
     if not pin then
-        pin = CreateFrame("Frame", nil, parent)
+        pin = CreateFrame("Button", nil, parent)
         pin:SetWidth(size)
         pin:SetHeight(size)
         pin:EnableMouse(true)
+        pin:RegisterForClicks("RightButtonUp")
 
         -- A solid colour drawn one pin-border larger than the icon, which reads
         -- as a quality-coloured ring around it without needing an art file.
@@ -194,22 +290,35 @@ local function AcquirePin(pool, used, parent, size)
         icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)  -- trim the icon's own border
         pin.icon = icon
 
-        -- The handlers read pin.itemID off the frame they are called with, so
-        -- they are set once here rather than re-hooked on every refresh.
+        local count = pin:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
+        count:SetPoint("BOTTOMRIGHT", 2, -2)
+        pin.count = count
+
+        pin.items = {}
+
+        -- The handlers read what they need off the frame they are called with,
+        -- so they are set once here rather than re-hooked on every refresh.
         pin:SetScript("OnEnter", PinTooltip)
         pin:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        pin:SetScript("OnClick", PinClick)
 
         pool[used] = pin
     end
+
     pin:SetParent(parent)
+    pin:SetWidth(size)
+    pin:SetHeight(size)
     return pin
 end
 
-local function DressPin(pin, itemID)
-    pin.itemID = itemID
-    pin.icon:SetTexture(GetItemIcon(itemID) or FALLBACK_ICON)
+-- The pin's look is decided by the best item in it: on a cluster that is the
+-- one worth walking over for, and on a single find it is simply the item.
+local function DressPin(pin, items, best, zoneName)
+    pin.items = items
+    pin.zoneName = zoneName
+    pin.icon:SetTexture(GetItemIcon(best) or FALLBACK_ICON)
 
-    local info = ItemInfo(itemID)
+    local info = ItemInfo(best)
     local color = info and ITEM_QUALITY_COLORS[info[2]]
     if color then
         pin.border:SetTexture(color.r, color.g, color.b)
@@ -217,9 +326,14 @@ local function DressPin(pin, itemID)
         pin.border:SetTexture(0, 0, 0)
     end
 
-    -- A claimed find is left on the map when the filter is off, but faded, so
-    -- what is still out there stands out at a glance.
-    pin:SetAlpha(db.claimed[itemID] and 0.35 or 1.0)
+    if #items > 1 then
+        pin.count:SetText(tostring(#items))
+    else
+        pin.count:SetText("")
+    end
+
+    pin:SetAlpha(db.claimed[best] and 0.4 or 1.0)
+    pin:Show()
 end
 
 local function HideFrom(pool, from)
@@ -245,10 +359,118 @@ end
 -- World map
 ----------------------------------------------------------------------------
 
-local statusText
+-- Blizzard's WorldMapButton covers the map and takes every mouse event; a pin
+-- has to be its child to be hoverable at all. WorldMapDetailFrame is only the
+-- fallback, and there for the same reason the Astrolabe-less path is: better a
+-- pin that cannot be hovered than no pin.
+local function PinParent()
+    return _G["WorldMapButton"] or WorldMapDetailFrame
+end
+
+local shownHere, totalHere, pinsOnMap = 0, 0, 0
+
+local clusterX, clusterY, clusterItems, clusterBest = {}, {}, {}, {}
+
+-- The item a marker wears and colours itself by: the best thing under it, so a
+-- rare find is never hidden behind the grey one that landed on top of it.
+local function Better(a, b)
+    if not a then return b end
+    local ia, ib = ItemInfo(a), ItemInfo(b)
+    if ia and ib and ib[2] > ia[2] then return b end
+    return a
+end
+
+-- Every visible find of one zone, in the coordinates of the map now open.
+-- Astrolabe answers nil for a point that cannot be shown there at all.
+local function EachVisiblePoint(entry, index, continent, zone, onZoneMap, fn)
+    for across, down, itemID in ZonePoints(entry) do
+        if IsVisible(itemID) then
+            local nx, ny = across, down
+            if Astrolabe then
+                nx, ny = Astrolabe:TranslateWorldMapPosition(index.c, index.z,
+                    across, down, continent, zone)
+            elseif not onZoneMap then
+                nx = nil  -- a zone fraction means nothing on a continent
+            end
+
+            if nx and ny and nx > 0 and nx <= 1 and ny > 0 and ny <= 1 then
+                fn(nx, ny, itemID)
+            end
+        end
+    end
+end
+
+-- One pin per zone, at the middle of that zone's finds. See the note at the top
+-- for why a continent does not get individual pins.
+local function BuildZoneMarkers(continent, zone, place)
+    for _, entry in ipairs(ns.zones) do
+        local index = zoneIndex[entry.zone]
+        if index and index.c == continent then
+            local sumX, sumY, count, items, best, seen = 0, 0, 0, {}, nil, {}
+
+            EachVisiblePoint(entry, index, continent, zone, false, function(nx, ny, itemID)
+                sumX, sumY, count = sumX + nx, sumY + ny, count + 1
+                if not seen[itemID] then
+                    seen[itemID] = true
+                    items[#items + 1] = itemID
+                    best = Better(best, itemID)
+                end
+            end)
+
+            if best then
+                -- Led by quality, so the tooltip's first lines are the reason to
+                -- go rather than the first row of the spawn table.
+                table.sort(items, function(a, b)
+                    local ia, ib = ItemInfo(a), ItemInfo(b)
+                    if ia[2] ~= ib[2] then return ia[2] > ib[2] end
+                    return ia[1] < ib[1]
+                end)
+                -- The centroid is of the spots, not of the distinct items: it
+                -- should sit where the finds actually are.
+                place(sumX / count, sumY / count, items, best, entry.zone)
+            end
+        end
+    end
+end
+
+-- One pin per find, bucketed into a grid one pin wide so two spots a few yards
+-- apart do not draw on top of each other.
+local function BuildZoneMapMarkers(entry, index, continent, zone, cellW, cellH, place)
+    for key in pairs(clusterItems) do
+        clusterX[key], clusterY[key], clusterItems[key], clusterBest[key] = nil, nil, nil, nil
+    end
+
+    local order = {}
+
+    EachVisiblePoint(entry, index, continent, zone, true, function(nx, ny, itemID)
+        local key = math.floor(nx / cellW) * 4096 + math.floor(ny / cellH)
+        local items = clusterItems[key]
+        if not items then
+            items = {}
+            clusterItems[key] = items
+            clusterX[key], clusterY[key] = nx, ny
+            order[#order + 1] = key
+        end
+
+        -- Two spots in one cell holding the same item are one thing to collect,
+        -- so the marker counts it once rather than promising a second copy.
+        for i = 1, #items do
+            if items[i] == itemID then return end
+        end
+
+        items[#items + 1] = itemID
+        clusterBest[key] = Better(clusterBest[key], itemID)
+    end)
+
+    for i = 1, #order do
+        local key = order[i]
+        place(clusterX[key], clusterY[key], clusterItems[key], clusterBest[key])
+    end
+end
 
 local function UpdateWorldMap()
     worldPinsUsed = 0
+    shownHere, totalHere, pinsOnMap = 0, 0, 0
 
     if not db.enabled or not WorldMapFrame:IsShown() then
         HideFrom(worldPins, 1)
@@ -258,76 +480,47 @@ local function UpdateWorldMap()
     local continent, zone = GetCurrentMapContinent(), GetCurrentMapZone()
     local texture = GetMapInfo()
     local onZoneMap = (zone and zone > 0)
+    local entry = onZoneMap and ZoneEntryForTexture(texture) or nil
 
-    -- Cosmic and Azeroth (continent 0 / -1) would put every pin in the world on
+    if entry then
+        shownHere, totalHere = ZoneCounts(entry)
+    end
+
+    -- Cosmic and Azeroth (continent 0 / -1) would put every find in the world on
     -- one screen, which is not a map any more.
-    if not continent or continent < 1 then
+    if not continent or continent < 1 or (not onZoneMap and not db.continentPins)
+        or (onZoneMap and not entry) then
         HideFrom(worldPins, 1)
-        if statusText then statusText:SetText("") end
-        return
-    end
-    if not onZoneMap and not db.continentPins then
-        HideFrom(worldPins, 1)
-        if statusText then statusText:SetText("") end
         return
     end
 
-    local shownHere, totalHere = 0, 0
+    local width, height = WorldMapDetailFrame:GetWidth(), WorldMapDetailFrame:GetHeight()
+    if not width or width <= 0 then return end
 
-    for _, entry in ipairs(ns.zones) do
-        local index = zoneIndex[entry.zone]
+    local parent = PinParent()
+    local level = parent:GetFrameLevel() + 5
 
-        -- Only the zones that can actually land on the map being looked at: the
-        -- one zone on a zone map, this continent's zones on a continent map.
-        -- Astrolabe would reject the rest anyway, but not before each had taken
-        -- a frame out of the pool and a slot off MAX_WORLD_PINS - and since the
-        -- zone list is alphabetical, the two continents interleave, so the cap
-        -- would cut into the pins actually being looked at.
-        local relevant = index and (onZoneMap and entry.texture == texture
-                                            or not onZoneMap and index.c == continent)
+    local function place(nx, ny, items, best, zoneName)
+        worldPinsUsed = worldPinsUsed + 1
 
-        if relevant then
-            for across, down, itemID in ZonePoints(entry) do
-                if IsVisible(itemID) then
-                    if worldPinsUsed >= MAX_WORLD_PINS then break end
-                    worldPinsUsed = worldPinsUsed + 1
-
-                    local pin = AcquirePin(worldPins, worldPinsUsed, WorldMapDetailFrame, PIN_SIZE)
-                    DressPin(pin, itemID)
-
-                    if Astrolabe then
-                        Astrolabe:PlaceIconOnWorldMap(WorldMapDetailFrame, pin,
-                            index.c, index.z, across, down)
-                    elseif onZoneMap then
-                        -- Without Astrolabe the fractions are still exactly right
-                        -- for their own zone map; only the continent view needs
-                        -- translating, and that is given up.
-                        pin:ClearAllPoints()
-                        pin:SetPoint("CENTER", WorldMapDetailFrame, "TOPLEFT",
-                            across * WorldMapDetailFrame:GetWidth(),
-                            -down * WorldMapDetailFrame:GetHeight())
-                        pin:Show()
-                    else
-                        pin:Hide()
-                    end
-                end
-            end
-
-            if onZoneMap then
-                shownHere, totalHere = ZoneCounts(entry)
-            end
-        end
+        local pin = AcquirePin(worldPins, worldPinsUsed, parent, PIN_SIZE)
+        pin:SetFrameLevel(level)
+        pin:ClearAllPoints()
+        pin:SetPoint("CENTER", WorldMapDetailFrame, "TOPLEFT", nx * width, -ny * height)
+        DressPin(pin, items, best, zoneName)
     end
 
+    if onZoneMap then
+        -- Cell size in map fractions, so a cell is CLUSTER_PX wide however
+        -- Mapster has scaled the map this time.
+        BuildZoneMapMarkers(entry, zoneIndex[entry.zone], continent, zone,
+            CLUSTER_PX / width, CLUSTER_PX / height, place)
+    else
+        BuildZoneMarkers(continent, zone, place)
+    end
+
+    pinsOnMap = worldPinsUsed
     HideFrom(worldPins, worldPinsUsed + 1)
-
-    if statusText then
-        if onZoneMap then
-            statusText:SetText(string.format("|cffffd100%d|r of %d left here", shownHere, totalHere))
-        else
-            statusText:SetText(string.format("|cffffd100%d|r pins on this map", worldPinsUsed))
-        end
-    end
 end
 
 ----------------------------------------------------------------------------
@@ -336,7 +529,8 @@ end
 
 -- Astrolabe keeps placed minimap icons positioned on its own, so this only has
 -- to run when the set of pins changes - a zone change, a claim, a filter - and
--- not on every frame.
+-- not on every frame. No clustering here: the minimap only ever shows the
+-- handful of finds within a few hundred yards.
 local function UpdateMinimap()
     minimapPinsUsed = 0
 
@@ -359,7 +553,7 @@ local function UpdateMinimap()
                     minimapPinsUsed = minimapPinsUsed + 1
 
                     local pin = AcquirePin(minimapPins, minimapPinsUsed, Minimap, MINIMAP_PIN_SIZE)
-                    DressPin(pin, itemID)
+                    DressPin(pin, { itemID }, itemID)
                     Astrolabe:PlaceIconOnMinimap(pin, index.c, index.z, across, down)
                 end
             end
@@ -422,84 +616,146 @@ local function HandleMessage(message)
 end
 
 ----------------------------------------------------------------------------
--- The panel on the world map
+-- The menu
 ----------------------------------------------------------------------------
 
-local function BuildPanel()
-    local panel = CreateFrame("Frame", "WorldforgedAtlasPanel", WorldMapFrame)
-    panel:SetWidth(190)
-    panel:SetHeight(112)
-    panel:SetPoint("TOPRIGHT", WorldMapFrame, "TOPRIGHT", -20, -60)
-    panel:SetBackdrop({
-        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-        tile = true, tileSize = 32, edgeSize = 16,
-        insets = { left = 5, right = 5, top = 5, bottom = 5 },
-    })
-    panel:SetFrameStrata("HIGH")
+local menuFrame
 
-    local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    title:SetPoint("TOPLEFT", 12, -10)
-    title:SetText("Worldforged")
+local QUALITIES = {
+    { 0, "Any quality" },
+    { 2, "Uncommon and better" },
+    { 3, "Rare and better" },
+    { 4, "Epic only" },
+}
 
-    statusText = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    statusText:SetPoint("TOPRIGHT", -12, -10)
+local function Toggle(key)
+    return function()
+        db[key] = not db[key]
+        Refresh()
+    end
+end
 
-    local function Checkbox(name, label, y, key)
-        local box = CreateFrame("CheckButton", "WorldforgedAtlas" .. name, panel, "UICheckButtonTemplate")
-        box:SetWidth(22)
-        box:SetHeight(22)
-        box:SetPoint("TOPLEFT", 10, y)
-        _G[box:GetName() .. "Text"]:SetText(label)
-        _G[box:GetName() .. "Text"]:SetFontObject("GameFontHighlightSmall")
-        box:SetChecked(db[key])
-        box:SetScript("OnClick", function(self)
-            db[key] = self:GetChecked() and true or false
-            Refresh()
-        end)
-        return box
+local function BuildMenu(_, level)
+    if level ~= 1 then return end
+
+    local info = UIDropDownMenu_CreateInfo()
+    info.isTitle, info.notCheckable = true, true
+    info.text = "Worldforged"
+    UIDropDownMenu_AddButton(info, level)
+
+    info = UIDropDownMenu_CreateInfo()
+    info.notCheckable, info.disabled = true, true
+    if totalHere > 0 then
+        info.text = string.format("%d of %d left in this zone", shownHere, totalHere)
+    elseif pinsOnMap > 0 then
+        info.text = string.format("%d markers on this map", pinsOnMap)
+    else
+        info.text = "No finds on this map"
+    end
+    UIDropDownMenu_AddButton(info, level)
+
+    local function Check(text, key)
+        local entry = UIDropDownMenu_CreateInfo()
+        entry.text = text
+        entry.checked = db[key]
+        entry.keepShownOnClick = true
+        entry.func = Toggle(key)
+        UIDropDownMenu_AddButton(entry, level)
     end
 
-    Checkbox("HideClaimed", "Hide claimed", -26, "hideClaimed")
-    Checkbox("Minimap", "Minimap pins", -46, "minimap")
-    Checkbox("Continent", "Continent maps", -66, "continentPins")
+    Check("Show pins", "enabled")
+    Check("Hide claimed finds", "hideClaimed")
+    Check("Minimap pins", "minimap")
+    Check("Pins on continent maps", "continentPins")
 
-    local quality = CreateFrame("Frame", "WorldforgedAtlasQuality", panel, "UIDropDownMenuTemplate")
-    quality:SetPoint("TOPLEFT", -6, -86)
-    UIDropDownMenu_SetWidth(quality, 130)
+    info = UIDropDownMenu_CreateInfo()
+    info.isTitle, info.notCheckable = true, true
+    info.text = "Quality"
+    UIDropDownMenu_AddButton(info, level)
 
-    local qualities = { [0] = "Any quality", [2] = "Uncommon+", [3] = "Rare+", [4] = "Epic+" }
-    local order = { 0, 2, 3, 4 }
-
-    UIDropDownMenu_Initialize(quality, function()
-        for _, value in ipairs(order) do
-            local info = UIDropDownMenu_CreateInfo()
-            info.text = qualities[value]
-            info.value = value
-            info.checked = (db.minQuality == value)
-            info.func = function(self)
-                db.minQuality = self.value
-                UIDropDownMenu_SetText(quality, qualities[self.value])
-                Refresh()
-            end
-            UIDropDownMenu_AddButton(info)
+    for _, quality in ipairs(QUALITIES) do
+        local entry = UIDropDownMenu_CreateInfo()
+        entry.text = quality[2]
+        entry.checked = (db.minQuality == quality[1])
+        entry.func = function()
+            db.minQuality = quality[1]
+            Refresh()
         end
-    end)
-    UIDropDownMenu_SetText(quality, qualities[db.minQuality] or qualities[0])
+        UIDropDownMenu_AddButton(entry, level)
+    end
 
-    return panel
+    info = UIDropDownMenu_CreateInfo()
+    info.text = "Re-sync my finds"
+    info.notCheckable = true
+    info.func = RequestSync
+    UIDropDownMenu_AddButton(info, level)
+end
+
+function OpenMenu(anchor)
+    if not menuFrame then
+        menuFrame = CreateFrame("Frame", "WorldforgedAtlasMenu", UIParent, "UIDropDownMenuTemplate")
+        UIDropDownMenu_Initialize(menuFrame, BuildMenu, "MENU")
+    end
+
+    -- Refresh first so the counts in the menu describe the map as it is now.
+    UpdateWorldMap()
+    ToggleDropDownMenu(1, nil, menuFrame, anchor and "cursor" or "cursor", 0, 0)
+end
+
+----------------------------------------------------------------------------
+-- The button in the map's header bar
+----------------------------------------------------------------------------
+
+local mapButton
+
+local function BuildButton()
+    mapButton = CreateFrame("Button", "WorldforgedAtlasButton", WorldMapFrame)
+    mapButton:SetWidth(26)
+    mapButton:SetHeight(26)
+
+    -- Beside Zoom Out, where the header bar is empty, rather than over the map:
+    -- a panel that hides the part of the map it sits on is a poor trade for a
+    -- map addon. If the client or Mapster has moved that button, fall back to
+    -- the frame's own corner.
+    local zoomOut = _G["WorldMapZoomOutButton"]
+    if zoomOut then
+        mapButton:SetPoint("LEFT", zoomOut, "RIGHT", 8, 0)
+    else
+        mapButton:SetPoint("TOPLEFT", WorldMapFrame, "TOPLEFT", 320, -20)
+    end
+
+    local icon = mapButton:CreateTexture(nil, "ARTWORK")
+    icon:SetPoint("TOPLEFT", 3, -3)
+    icon:SetPoint("BOTTOMRIGHT", -3, 3)
+    icon:SetTexture("Interface\\Icons\\INV_Box_01")
+    icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    mapButton.icon = icon
+
+    mapButton:SetNormalTexture("Interface\\Buttons\\UI-Quickslot2")
+    mapButton:GetNormalTexture():SetTexCoord(0.2, 0.8, 0.2, 0.8)
+    mapButton:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+
+    mapButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    mapButton:SetScript("OnClick", function() OpenMenu() end)
+
+    mapButton:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOMLEFT")
+        GameTooltip:AddLine("Worldforged", 1, 0.82, 0)
+        if totalHere > 0 then
+            GameTooltip:AddLine(string.format("%d of %d left in this zone", shownHere, totalHere),
+                1, 1, 1)
+        elseif pinsOnMap > 0 then
+            GameTooltip:AddLine(string.format("%d markers on this map", pinsOnMap), 1, 1, 1)
+        end
+        GameTooltip:AddLine("Click for options", 0.5, 0.5, 0.5)
+        GameTooltip:Show()
+    end)
+    mapButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
 end
 
 ----------------------------------------------------------------------------
 -- Events
 ----------------------------------------------------------------------------
-
-local panel
-
-local function ShowPanel()
-    if not panel then return end
-    if db.enabled and WorldMapFrame:IsShown() then panel:Show() else panel:Hide() end
-end
 
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
@@ -509,8 +765,8 @@ frame:RegisterEvent("WORLD_MAP_UPDATE")
 frame:RegisterEvent("CHAT_MSG_ADDON")
 
 -- WORLD_MAP_UPDATE fires repeatedly while the map is open, and a continent map
--- is several hundred pins to reposition. Coalesce into one rebuild per frame
--- rather than one per event.
+-- is several hundred points to translate and bucket. Coalesce into one rebuild
+-- per frame rather than one per event.
 local pending = false
 
 frame:SetScript("OnUpdate", function()
@@ -529,7 +785,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
             ApplyDefaults()
             db = WorldforgedAtlasDB
             BuildZoneIndex()
-            panel = BuildPanel()
+            BuildButton()
         end
 
     elseif event == "PLAYER_ENTERING_WORLD" then
@@ -546,7 +802,6 @@ frame:SetScript("OnEvent", function(self, event, ...)
         UpdateMinimap()
 
     elseif event == "WORLD_MAP_UPDATE" then
-        ShowPanel()
         pending = true
 
     elseif event == "CHAT_MSG_ADDON" then
@@ -572,15 +827,18 @@ SlashCmdList["WORLDFORGEDATLAS"] = function(input)
         return
     end
 
+    if input == "menu" then
+        OpenMenu()
+        return
+    end
+
     if input == "off" or input == "on" then
         db.enabled = (input == "on")
     else
         db.enabled = not db.enabled
     end
 
-    ShowPanel()
     Refresh()
-
     DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WorldforgedAtlas|r: pins " ..
         (db.enabled and "shown." or "hidden."))
 end
