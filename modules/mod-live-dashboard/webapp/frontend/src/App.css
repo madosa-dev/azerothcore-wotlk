@@ -1012,3 +1012,161 @@ main.wide {
 .tip-line.flavor { color: #ffd100; font-style: italic; margin-top: 4px; }
 .tip-row { display: flex; justify-content: space-between; gap: 8px; }
 .tip .money { font-size: 12px; }
+
+
+/* ---------------------------------------------------------------------- */
+/* Worldforged finds                                                       */
+/* ---------------------------------------------------------------------- */
+
+/* The tab strip and the Worldforged toggle on one line. The nav keeps its own
+   padding, so the row aligns on the tabs' baseline rather than their box. */
+.map-tools {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  padding-right: 24px;
+}
+
+.map-tools nav { flex: 1; min-width: 0; }
+
+/* Shaped like a tab, because it sits in the tab strip - but it is a toggle,
+   not a fifth continent, so it carries its own colour when it is on. */
+.wf-toggle {
+  background: var(--panel2);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  padding: 8px 16px;
+  border-radius: 8px 8px 0 0;
+  cursor: pointer;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.wf-toggle:hover { color: var(--text); }
+.wf-toggle.on { background: var(--panel); color: #d9b3ff; border-color: #6d4a9e; }
+
+.wf-panel {
+  width: 320px;
+  flex: 0 0 320px;
+  display: flex;
+  flex-direction: column;
+  max-height: 78vh;
+}
+
+.wf-panel h2 { display: flex; align-items: center; gap: 8px; }
+
+.wf-close {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.wf-close:hover { color: var(--text); }
+
+.wf-search {
+  width: 100%;
+  padding: 6px 8px;
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.wf-search:focus { outline: none; border-color: var(--accent); }
+
+.wf-filters {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.wf-filters select {
+  min-width: 0;
+  padding: 5px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.wf-check {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.wf-list {
+  overflow-y: auto;
+  min-height: 0;
+  margin: 0 -4px;
+}
+
+.wf-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.wf-row:hover { background: var(--panel2); }
+.wf-row.on { background: #2b2140; }
+
+.wf-row img,
+.wf-noicon {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border-radius: 3px;
+  border: 1px solid #000;
+  background: var(--bg);
+}
+
+.wf-text { display: flex; flex-direction: column; min-width: 0; }
+
+.wf-name {
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wf-meta {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wf-more {
+  padding: 8px 4px;
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+}
+
+@media (max-width: 1100px) {
+  .wf-panel { width: auto; flex: 1 1 auto; max-height: 50vh; }
+}

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { TILE_SIZE, tileColRow } from '../constants'
+import { QUALITY_COLORS, TILE_SIZE, tileColRow } from '../constants'
 
 // A transparent pixel for the tiles that do not exist: the pyramid only holds
 // land, and Leaflet would otherwise draw a broken-image icon over the sea.
@@ -22,6 +22,20 @@ function styleFor(player, selected) {
   }
 }
 
+// A Worldforged find is a fixed spot, not a moving character, so it is drawn
+// in its item's quality colour with a dark ring - unmistakable next to the two
+// flat colours the player and bot dots use, and readable at a glance for what
+// kind of item is lying there.
+function findStyle(item, picked) {
+  return {
+    radius: picked ? 8 : 4.5,
+    color: picked ? '#ffffff' : 'rgba(0,0,0,0.75)',
+    weight: picked ? 2 : 1,
+    fillColor: QUALITY_COLORS[item?.quality] || '#9d9d9d',
+    fillOpacity: 0.95,
+  }
+}
+
 function tooltipFor(p) {
   return `<b>${p.name}</b> — Lvl ${p.level} ${p.race} ${p.class}` +
     (p.guild ? ` &lt;${p.guild}&gt;` : '') + `<br>${p.areaName} — ${p.hpPct}% HP`
@@ -32,12 +46,18 @@ function tooltipFor(p) {
 // at the pyramid's native zoom one unit is one pixel of the stitched
 // continent - which makes a position's tile column and row (the same numbers
 // MAP_TILES uses for the single-picture fallback) its coordinates directly.
-export default function TiledMap({ mapId, extent, positions, selected, onSelect }) {
+export default function TiledMap({
+  mapId, extent, positions, selected, onSelect,
+  finds, findItems, pickedFind, onFindHover, onFindLeave, flyTo,
+}) {
   const elRef = useRef(null)
   const mapRef = useRef(null)
   const markersRef = useRef(new Map())
+  const findsRef = useRef(new Map())
   const onSelectRef = useRef(onSelect)
   onSelectRef.current = onSelect
+  const findHandlers = useRef({ hover: onFindHover, leave: onFindLeave })
+  findHandlers.current = { hover: onFindHover, leave: onFindLeave }
 
   const unitsPerTile = TILE_SIZE / 2 ** extent.maxZoom
   const toLatLng = (posX, posY) => {
@@ -72,6 +92,7 @@ export default function TiledMap({ mapId, extent, positions, selected, onSelect 
       map.remove()
       mapRef.current = null
       markersRef.current = new Map()
+      findsRef.current = new Map()
     }
     // The map is created once per continent; the parent keys this component on mapId.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -115,6 +136,51 @@ export default function TiledMap({ mapId, extent, positions, selected, onSelect 
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [positions, selected])
+
+  // The Worldforged layer. Reconciled the same way the player dots are, but on
+  // a different trigger: finds never move, so this only runs when the filtered
+  // set changes - a search keystroke, not a two-second poll.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    const markers = findsRef.current
+    const seen = new Set()
+
+    for (const f of finds || []) {
+      seen.add(f.id)
+      const item = findItems?.[f.entry]
+      const picked = f.id === pickedFind
+      let m = markers.get(f.id)
+      if (!m) {
+        m = L.circleMarker(toLatLng(f.posX, f.posY), findStyle(item, picked))
+          .on('mouseover', (e) => findHandlers.current.hover(f, e.originalEvent))
+          .on('mouseout', () => findHandlers.current.leave())
+          .on('click', (e) => findHandlers.current.hover(f, e.originalEvent))
+          .addTo(map)
+        m._picked = picked
+        markers.set(f.id, m)
+      } else if (m._picked !== picked) {
+        m.setStyle(findStyle(item, picked))
+        m._picked = picked
+      }
+      if (picked) m.bringToFront()
+    }
+
+    for (const [id, m] of markers) {
+      if (!seen.has(id)) { m.remove(); markers.delete(id) }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [finds, findItems, pickedFind])
+
+  // Picking a find from the search list brings it into view, at a zoom where
+  // the ground around it is readable. Only on a new pick, so the view stays the
+  // user's while they read the list.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !flyTo) return
+    map.setView(toLatLng(flyTo.posX, flyTo.posY), Math.max(map.getZoom(), extent.maxZoom - 1))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flyTo])
 
   // A newly selected character is brought into view once, at a zoom where
   // the neighbourhood is readable; after that the view is the user's.

@@ -62,3 +62,10 @@ export function worldToContinentPct(mapId, posX, posY) {
     pctY: ((row - t.rowMin) / t.rows) * 100,
   }
 }
+
+// Item quality colours, the game's own: poor, common, uncommon, rare, epic,
+// legendary, artifact, heirloom. Shared by the item tooltip and the Worldforged
+// map layer so a name and its marker can never disagree about an item's colour.
+export const QUALITY_COLORS = [
+  '#9d9d9d', '#ffffff', '#1eff00', '#0070dd', '#a335ee', '#ff8000', '#e6cc80', '#e6cc80',
+]

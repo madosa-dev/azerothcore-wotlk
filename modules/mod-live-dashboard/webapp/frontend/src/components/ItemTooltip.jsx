@@ -1,6 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react'
-
-const QUALITY_COLORS = ['#9d9d9d', '#ffffff', '#1eff00', '#0070dd', '#a335ee', '#ff8000', '#e6cc80', '#e6cc80']
+import { QUALITY_COLORS } from '../constants'
 
 function Money({ copper }) {
   const g = Math.floor(copper / 10000)

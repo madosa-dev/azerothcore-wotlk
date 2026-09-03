@@ -92,6 +92,46 @@ the Admin view. They are mod-playerbots' own `.playerbots rndbot <verb> <name>`
 console commands plus `.tele name` and `.kick`; the rndbot ones answer in the
 server log rather than to the caller, so "done" means the world tick ran it.
 
+## Worldforged finds on the map
+
+The **Worldforged** button beside the continent tabs draws mod-madosa's 1628
+Ascension Worldforged find locations onto the same map the players are on, with
+a search-and-filter panel beside it.
+
+The spawn table stores world coordinates - the same thing a player position is -
+so a find needs no conversion the map does not already do for a character. That
+is the whole reason this is a few dozen lines rather than a coordinate project:
+`/api/worldforged` reads `mod_madosa_worldforged_ascension_spawns` joined to
+`item_template` and hands over points and items as they are.
+
+- **Two payloads, on purpose.** The point list and the item table are sent
+  separately and keyed by item entry, because 1628 finds name only 1506 distinct
+  items - several places hold the same one - and the search wants that table
+  anyway. It is 355 KB, fetched once when the layer is first switched on and
+  kept for the session: unlike positions this is not live data, so polling it
+  would be the same answer every two seconds.
+- **Tooltips are fetched per item, on hover.** `/api/worldforged/item?entry=N`
+  returns the full game tooltip through the same `item_tooltip()` the character
+  sheet uses, so a find describes itself exactly the way the gear on a character
+  card does - stats, Equip/Use lines, durability, sell price. Sending all 1506
+  up front would be megabytes for the handful anyone looks at. The one
+  adjustment: that function reads a row whose first columns come from
+  `item_instance` - one physical copy's enchantments and random-property roll -
+  and a find has no copy yet, so those are sent as "none rolled" and durability
+  as full. What is shown is the item as it will be handed over.
+- **The map draws exactly what the filters left.** The panel owns the filtering
+  and reports its result up, rather than the map filtering again - two
+  implementations of "what is being looked at" is one too many. Markers carry
+  the item's quality colour, which is also what the search list and the tooltip
+  use, all three from one table in `constants.js`.
+- Picking a row centres the map on that find, switching continent if it is on
+  the other one.
+
+The single-picture fallback map (`ContinentMap`, for a continent whose tile
+pyramid has not been built) carries no find layer. Every continent this server
+serves has tiles, so that path is a safety net rather than a second UI to keep
+in step.
+
 ## The Chronicle
 
 `src/live_chronicle.cpp` writes one row per notable event into
@@ -130,7 +170,8 @@ not an admin console. The gate is at the other end:
   endpoint. The token is generated on first run, kept in `webapp/.admin-token`
   (mode 0600) and printed at startup. Delete that file to roll it.
 - The read-only endpoints (`/api/positions`, `/api/stats`, `/api/chronicle`,
-  `/api/character?guid=N`) are unauthenticated, exactly as before.
+  `/api/character?guid=N`, `/api/worldforged`, `/api/worldforged/item?entry=N`)
+  are unauthenticated, exactly as before.
 - Binding stays localhost-only unless you pass `--host`, and passing it prints a
   warning. **Do not expose this to an untrusted network.**
 

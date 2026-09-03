@@ -200,7 +200,7 @@ function OtherList({ positions, onSelect }) {
   )
 }
 
-export default function WorldMap({ positions, activeTab, selected, onSelect }) {
+export default function WorldMap({ positions, activeTab, selected, onSelect, worldforged }) {
   const { index, ready } = useTileIndex()
   const inTab = useMemo(
     () => positions.filter((p) => (activeTab === OTHER_TAB_ID ? !MAP_IMAGES[p.mapId] : p.mapId === activeTab)),
@@ -222,10 +222,13 @@ export default function WorldMap({ positions, activeTab, selected, onSelect }) {
     return (
       <div className="world-map-wrap">
         <TiledMap key={activeTab} mapId={activeTab} extent={extent} positions={inTab}
-          selected={selected} onSelect={onSelect} />
+          selected={selected} onSelect={onSelect} {...(worldforged || {})} />
       </div>
     )
   }
 
+  // The single-picture fallback, for a continent whose tile pyramid has not
+  // been built. It carries no Worldforged layer: every continent this server
+  // serves has tiles, so that path is a safety net, not a second UI to keep.
   return <ContinentMap mapId={activeTab} positions={inTab} selected={selected} onSelect={onSelect} />
 }

@@ -364,6 +364,90 @@ class DB:
             })
         return out
 
+    # The Worldforged find locations and the items they hold. Neither changes
+    # while the server runs - the spawn table is generated offline and read at
+    # startup - so this is built once and kept, rather than re-queried for every
+    # visitor of a page that shows all 1633 of them at once.
+    _worldforged = None
+
+    def worldforged(self) -> dict:
+        """Every Ascension Worldforged find, for the map's own layer.
+
+        Points carry world coordinates, which is what the map plots players in
+        too, so a find needs no conversion the positions do not already do. The
+        items are sent as a separate table keyed by entry because 1633 finds
+        name only about 1500 distinct items, several spots holding the same one,
+        and the search wants that table anyway."""
+        if DB._worldforged is not None:
+            return DB._worldforged
+
+        rows = self.query(
+            "SELECT s.id, s.map, s.position_x, s.position_y, s.item, s.zone, "
+            "it.name, it.Quality, it.ItemLevel, it.InventoryType, it.displayid, it.class, it.subclass "
+            "FROM mod_madosa_worldforged_ascension_spawns s "
+            "JOIN item_template it ON it.entry = s.item ORDER BY s.id",
+            self.world,
+        )
+
+        points, items = [], {}
+        for r in rows:
+            if len(r) < 13:
+                continue
+            entry = int(r[4])
+            points.append({
+                "id": int(r[0]),
+                "mapId": int(r[1]),
+                "posX": float(r[2]),
+                "posY": float(r[3]),
+                "entry": entry,
+                "zone": r[5],
+            })
+            if entry not in items:
+                cls, subclass = int(r[11]), int(r[12])
+                items[entry] = {
+                    "name": r[6],
+                    "quality": int(r[7]),
+                    "ilvl": int(r[8]),
+                    "slot": INVENTORY_TYPE.get(int(r[9]), ""),
+                    "icon": ICON_BY_DISPLAY_ID.get(r[10], ""),
+                    "type": (ARMOR_SUBCLASS if cls == 4 else WEAPON_SUBCLASS if cls == 2 else {}).get(subclass, ""),
+                }
+
+        DB._worldforged = {"points": points, "items": items}
+        return DB._worldforged
+
+    def worldforged_item(self, entry: int) -> dict | None:
+        """One Worldforged item's full tooltip, fetched when one is hovered.
+
+        item_tooltip() reads a row of the character sheet's gear query, whose
+        first columns come from item_instance - the enchantments and random
+        property roll of one physical copy. A find is a template and has no
+        copy yet, so those are sent as "none rolled" and the durability as
+        full: what the tooltip shows is the item as it will be handed over."""
+        entry = int(entry)
+        rows = self.query(
+            "SELECT 0, it.entry, it.name, it.Quality, it.ItemLevel, it.displayid, it.InventoryType, "
+            "it.class, it.subclass, it.InventoryType, it.bonding, it.RequiredLevel, it.armor, "
+            "it.dmg_min1, it.dmg_max1, it.delay, it.MaxDurability, it.SellPrice, it.description, "
+            "it.MaxDurability, '', 0, "
+            + ", ".join(f"it.stat_type{k}, it.stat_value{k}" for k in range(1, 11)) + ", "
+            + ", ".join(f"it.spellid_{k}, it.spelltrigger_{k}" for k in range(1, 4)) + " "
+            f"FROM item_template it WHERE it.entry = {entry}",
+            self.world,
+        )
+        if not rows or len(rows[0]) < 48:
+            return None
+
+        g = rows[0]
+        return {
+            "entry": entry,
+            "name": g[2],
+            "quality": int(g[3]),
+            "ilvl": int(g[4]),
+            "icon": ICON_BY_DISPLAY_ID.get(g[5], ""),
+            "tooltip": item_tooltip(g),
+        }
+
     def character(self, guid: int) -> dict | None:
         """One character's sheet, the way an armory would show it: who they
         are, what they wear, what they can make. Read from the tables the
@@ -765,6 +849,13 @@ def make_handler(db: DB, token: str):
                     ))
                 elif path == "/api/chronicle/summary":
                     self._json(db.chronicle_summary())
+                elif path == "/api/worldforged":
+                    self._json(db.worldforged())
+                elif path == "/api/worldforged/item":
+                    item = db.worldforged_item(int(query.get("entry", [0])[0] or 0))
+                    if item is None:
+                        return self._deny(404, "no such item")
+                    self._json(item)
                 elif path == "/api/character":
                     sheet = db.character(int(query.get("guid", [0])[0] or 0))
                     if sheet is None:

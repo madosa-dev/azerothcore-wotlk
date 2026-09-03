@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { usePolling } from './hooks/usePolling'
+import { useItemTooltips, useWorldforged } from './hooks/useWorldforged'
 import { CONTINENTS, MAP_IMAGES } from './constants'
 import StatsBar from './components/StatsBar'
 import ContinentTabs from './components/ContinentTabs'
@@ -8,6 +9,8 @@ import SidePanels from './components/SidePanels'
 import Chronicle from './components/Chronicle'
 import Admin from './components/Admin'
 import CharacterCard from './components/CharacterCard'
+import WorldforgedPanel from './components/WorldforgedPanel'
+import ItemTooltip from './components/ItemTooltip'
 import './App.css'
 
 const VIEWS = [
@@ -45,6 +48,46 @@ export default function App() {
 function MapView({ activeTab, setActiveTab, stats }) {
   const positions = usePolling('/api/positions') ?? []
 
+  const [showFinds, setShowFinds] = useState(false)
+  const worldforged = useWorldforged(showFinds)
+  const tooltips = useItemTooltips()
+
+  // What the panel's filters left, and which one the user picked out of it.
+  const [visibleFinds, setVisibleFinds] = useState([])
+  const [pickedFind, setPickedFind] = useState(null)
+  const [flyTo, setFlyTo] = useState(null)
+  const [hovered, setHovered] = useState(null)
+
+  // ItemTooltip positions itself against anything that can report a rectangle,
+  // so a map marker - which is drawn on a canvas and has no element of its own
+  // - is given the mouse position as a zero-sized one.
+  const anchorRef = useRef(null)
+
+  const hoverFind = useCallback((find, evtOrElement) => {
+    tooltips.load(find.entry)
+    if (evtOrElement instanceof Element) {
+      anchorRef.current = evtOrElement
+    } else {
+      const x = evtOrElement?.clientX ?? 0
+      const y = evtOrElement?.clientY ?? 0
+      anchorRef.current = {
+        getBoundingClientRect: () => ({
+          left: x, right: x, top: y, bottom: y, width: 0, height: 0, x, y,
+        }),
+      }
+    }
+    setHovered(find.entry)
+  }, [tooltips])
+
+  const leaveFind = useCallback(() => setHovered(null), [])
+
+  const pickFind = useCallback((find) => {
+    setPickedFind(find.id)
+    if (find.mapId !== activeTab && MAP_IMAGES[find.mapId]) setActiveTab(find.mapId)
+    // A new object every time, so picking the same find twice still recentres.
+    setFlyTo({ posX: find.posX, posY: find.posY, at: Date.now() })
+  }, [activeTab, setActiveTab])
+
   // ?guid=N opens a character straight away, so a card can be linked to.
   const [selected, setSelected] = useState(() => {
     const guid = Number(new URLSearchParams(window.location.search).get('guid'))
@@ -66,16 +109,53 @@ function MapView({ activeTab, setActiveTab, stats }) {
 
   return (
     <>
-      <ContinentTabs active={activeTab} onChange={setActiveTab} />
+      <div className="map-tools">
+        <ContinentTabs active={activeTab} onChange={setActiveTab} />
+        <button
+          type="button"
+          className={`wf-toggle${showFinds ? ' on' : ''}`}
+          onClick={() => setShowFinds((v) => !v)}
+        >
+          Worldforged
+        </button>
+      </div>
       <main>
         <div className="map-row">
-          <WorldMap positions={positions} activeTab={activeTab} selected={selected} onSelect={setSelected} />
+          <WorldMap
+            positions={positions}
+            activeTab={activeTab}
+            selected={selected}
+            onSelect={setSelected}
+            worldforged={showFinds ? {
+              finds: visibleFinds,
+              findItems: worldforged?.items,
+              pickedFind,
+              onFindHover: hoverFind,
+              onFindLeave: leaveFind,
+              flyTo,
+            } : null}
+          />
+          {showFinds && (
+            <WorldforgedPanel
+              data={worldforged}
+              mapId={activeTab}
+              picked={pickedFind}
+              onPick={pickFind}
+              onHover={hoverFind}
+              onLeave={leaveFind}
+              onResults={setVisibleFinds}
+              onClose={() => { setShowFinds(false); setPickedFind(null) }}
+            />
+          )}
           {selected != null && (
             <CharacterCard guid={selected} live={live} onClose={() => setSelected(null)} />
           )}
         </div>
         <SidePanels stats={stats} />
       </main>
+      {hovered != null && tooltips.get(hovered) && (
+        <ItemTooltip item={tooltips.get(hovered)} anchor={anchorRef.current} />
+      )}
     </>
   )
 }
