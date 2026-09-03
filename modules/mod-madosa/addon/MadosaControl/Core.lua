@@ -465,12 +465,21 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         local name = ...
         if name == "MadosaControl" then
             BuildFrame()
-            MadosaControl_BuildMinimapButton()
-            -- Hooked rather than called from the toggle, so the button also
-            -- notices the panel's own close button and anything else that
-            -- hides it.
-            frame:HookScript("OnShow", MadosaControl_RefreshMinimapButton)
-            frame:HookScript("OnHide", MadosaControl_RefreshMinimapButton)
+
+            -- Minimap.lua is a separate file, and the client reads an addon's
+            -- file list when it starts rather than at /reload: updating this
+            -- addon in place reloads Core.lua while a newly added file stays
+            -- absent until the client is restarted. Guarded, so that costs the
+            -- button rather than throwing an error and taking the panel with
+            -- it.
+            if MadosaControl_BuildMinimapButton then
+                MadosaControl_BuildMinimapButton()
+                -- Hooked rather than called from the toggle, so the button also
+                -- notices the panel's own close button and anything else that
+                -- hides it.
+                frame:HookScript("OnShow", MadosaControl_RefreshMinimapButton)
+                frame:HookScript("OnHide", MadosaControl_RefreshMinimapButton)
+            end
         end
     elseif event == "CHAT_MSG_ADDON" then
         local prefix, message = ...
@@ -506,6 +515,12 @@ SLASH_MADOSACONTROL1 = "/madosa"
 SLASH_MADOSACONTROL2 = "/mc"
 SlashCmdList["MADOSACONTROL"] = function(input)
     if string.lower(strtrim(input or "")) == "minimap" then
+        if not MadosaControl_ToggleMinimapButton then
+            DEFAULT_CHAT_FRAME:AddMessage("|cff1ba6edMadosaControl|r: the minimap button "
+                .. "arrived with a new file - restart the client, /reload does not pick one up.")
+            return
+        end
+
         local shown = MadosaControl_ToggleMinimapButton()
         DEFAULT_CHAT_FRAME:AddMessage("|cff1ba6edMadosaControl|r: minimap button " ..
             (shown and "shown." or "hidden."))

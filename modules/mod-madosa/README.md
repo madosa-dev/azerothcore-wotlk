@@ -868,3 +868,11 @@ normal whisper. It is intentionally independent from the third-party
 To install: copy `addon/MadosaControl` into the client's
 `Interface/AddOns/MadosaControl` folder (already done for the WotLK client at
 `~/Games/world-of-warcraft-wrath-of-the-lich-king/...` in this dev setup).
+
+**An update that adds a file needs the client restarted, not `/reload`.** The
+client reads an addon's file list from its `.toc` when it starts; `/reload`
+re-runs the files it already knows about. Copying in a version with a new file
+therefore reloads the old ones and leaves the new one absent - which is how
+`Minimap.lua` first arrived as an error in `Core.lua` rather than as a button.
+Core.lua guards its calls into it for that reason, so a half-updated install
+costs the button and not the panel.
