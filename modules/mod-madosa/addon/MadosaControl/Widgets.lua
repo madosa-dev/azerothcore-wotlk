@@ -81,8 +81,8 @@ function MadosaUI.Divider(parent)
     return line
 end
 
-function MadosaUI.Button(parent, text, width, height)
-    local button = CreateFrame("Button", nil, parent)
+function MadosaUI.Button(parent, text, width, height, name)
+    local button = CreateFrame("Button", name, parent)
     button:SetWidth(width or 90)
     button:SetHeight(height or 22)
     button:SetBackdrop({

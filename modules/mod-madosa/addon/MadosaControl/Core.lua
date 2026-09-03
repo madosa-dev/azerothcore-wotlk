@@ -514,7 +514,14 @@ end
 SLASH_MADOSACONTROL1 = "/madosa"
 SLASH_MADOSACONTROL2 = "/mc"
 SlashCmdList["MADOSACONTROL"] = function(input)
-    if string.lower(strtrim(input or "")) == "minimap" then
+    local arg = string.lower(strtrim(input or ""))
+
+    if arg == "minimap debug" then
+        if MadosaControl_DebugMinimapButton then MadosaControl_DebugMinimapButton() end
+        return
+    end
+
+    if arg == "minimap" then
         if not MadosaControl_ToggleMinimapButton then
             DEFAULT_CHAT_FRAME:AddMessage("|cff1ba6edMadosaControl|r: the minimap button "
                 .. "arrived with a new file - restart the client, /reload does not pick one up.")

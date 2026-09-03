@@ -857,6 +857,17 @@ needs a timing guard that then eats real clicks. A Button has the distinction
 built in - the client does not fire `OnClick` when a drag happened - which is
 why every minimap button is one.
 
+**The ring is measured, not assumed.** The usual constant for this is 80, which
+is the ring of a stock 140px minimap - and this install's is 220px, because
+ElvUI is configured that way. 80px from the centre of a 220px minimap is
+*inside* the map, sitting on the minimap's own surface, where the button draws
+perfectly and never sees a mouse event: the icon is there and nothing happens
+when you click it, tooltip included. The radius comes from
+`Minimap:GetWidth() / 2` plus a margin, so it follows whatever size the minimap
+is. `/madosa minimap debug` prints those numbers plus `GetMouseFocus()`, which
+names the frame actually taking the mouse - on someone else's UI that is worth
+more than any amount of reasoning about strata.
+
 Its position is stored as an **angle on the minimap's ring**, not as a point:
 dragging it is dragging it around the circle, and one number survives a UI scale
 change that a saved x/y offset would not. Left-click opens the panel,
