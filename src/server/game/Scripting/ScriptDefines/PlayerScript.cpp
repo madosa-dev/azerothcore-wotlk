@@ -538,6 +538,12 @@ bool ScriptMgr::OnPlayerCanSendErrorAlreadyLooted(Player* player)
     CALL_ENABLED_BOOLEAN_HOOKS(PlayerScript, PLAYERHOOK_CAN_SEND_ERROR_ALREADY_LOOTED, !script->OnPlayerCanSendErrorAlreadyLooted(player));
 }
 
+bool ScriptMgr::OnPlayerCanLootOutOfRange(Player* player, ObjectGuid lootGuid)
+{
+    CALL_ENABLED_BOOLEAN_HOOKS_WITH_DEFAULT_FALSE(PlayerScript, PLAYERHOOK_CAN_LOOT_OUT_OF_RANGE,
+        script->OnPlayerCanLootOutOfRange(player, lootGuid));
+}
+
 void ScriptMgr::OnPlayerAfterCreatureLoot(Player* player)
 {
     CALL_ENABLED_HOOKS(PlayerScript, PLAYERHOOK_ON_AFTER_CREATURE_LOOT, script->OnPlayerAfterCreatureLoot(player));

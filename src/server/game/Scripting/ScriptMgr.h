@@ -480,6 +480,7 @@ public: /* PlayerScript */
     void OnPlayerQuestAbandon(Player* player, uint32 questId);
     void OnPlayerQuestAccept(Player* player, Quest const* quest);
     bool OnPlayerCanSendErrorAlreadyLooted(Player* player);
+    bool OnPlayerCanLootOutOfRange(Player* player, ObjectGuid lootGuid);
     void OnPlayerAfterCreatureLoot(Player* player);
     void OnPlayerAfterCreatureLootMoney(Player* player);
     bool OnPlayerCanFlyInZone(Player* player, uint32 mapId, uint32 zoneId, SpellInfo const* bySpell);

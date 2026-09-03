@@ -222,6 +222,7 @@ enum PlayerHook
     PLAYERHOOK_ON_LEARN_TAXI_NODE,
     PLAYERHOOK_ON_BEFORE_GET_LEVEL_FOR_XP_GAIN,
     PLAYERHOOK_CAN_BYPASS_QUEST_PREREQUISITES,
+    PLAYERHOOK_CAN_LOOT_OUT_OF_RANGE,
     PLAYERHOOK_END
 };
 
@@ -785,6 +786,25 @@ public:
      * @return true Avoiding displaying the error message that the loot has already been taken.
      */
     virtual bool OnPlayerCanSendErrorAlreadyLooted(Player* /*player*/) { return true; }
+
+    /**
+     * @brief Whether this player may loot something further away than INTERACTION_DISTANCE.
+     *
+     * Looting is gated on the corpse being within arm's reach in three places -
+     * Player::SendLoot() and the two loot opcode handlers - which is right for a
+     * player reaching into a corpse, and wrong for a script looting on their
+     * behalf: a kill made at range leaves its corpse where it fell. A script
+     * that has already established the player may have this loot answers true
+     * for the moment it is doing so, and nothing else changes: permission, group
+     * rolls, master loot and the gold split all still run exactly as they do for
+     * a player standing on the body.
+     *
+     * @param player Contains information about the Player
+     * @param lootGuid The corpse, object or item being looted
+     *
+     * @return true to let this one loot proceed regardless of distance.
+     */
+    [[nodiscard]] virtual bool OnPlayerCanLootOutOfRange(Player* /*player*/, ObjectGuid /*lootGuid*/) { return false; }
 
     /**
      * @brief It is used when an item is taken from a creature.
