@@ -26,6 +26,7 @@
 #include <list>
 #include <map>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 enum RollType
@@ -225,6 +226,16 @@ public:
     [[nodiscard]] bool HaveQuestLootFor(uint32 loot_id) const;
     bool HaveQuestLootForPlayer(uint32 loot_id, Player const* player) const;
 
+    // The items this loot always yields, i.e. those that drop on every open.
+    // A guaranteed drop is what tells a chest that exists *for* a quest from one
+    // that merely might hold something a quest wants: the first is why the
+    // object is in the world, the second is a Battered Chest with a 0.02% herb
+    // in it. Filled into `items`, which is not cleared first.
+    void GetGuaranteedItems(uint32 loot_id, std::unordered_set<uint32>& items) const;
+    // Whether this loot always yields something the player still needs for a
+    // quest in their log.
+    bool HaveGuaranteedQuestItemForPlayer(uint32 loot_id, Player const* player) const;
+
     [[nodiscard]] LootTemplate const* GetLootFor(uint32 loot_id) const;
     [[nodiscard]] LootTemplate* GetLootForConditionFill(uint32 loot_id) const;
 
@@ -261,6 +272,11 @@ public:
     [[nodiscard]] bool HasQuestDrop(LootTemplateMap const& store) const;
     // True if template includes at least 1 quest drop for an active quest of the player
     bool HasQuestDropForPlayer(LootTemplateMap const& store, Player const* player) const;
+
+    // Every item the template is certain to yield. See LootStore::GetGuaranteedItems.
+    void CollectGuaranteedItems(LootTemplateMap const& store, std::unordered_set<uint32>& items) const;
+    // True if one of those is an item the player still needs for a quest
+    bool HasGuaranteedQuestItemForPlayer(LootTemplateMap const& store, Player const* player) const;
 
     // Checks integrity of the template
     void Verify(LootStore const& store, uint32 Id) const;

@@ -9384,6 +9384,38 @@ PetNameInvalidReason ObjectMgr::CheckPetName(std::string_view name)
     return PET_NAME_SUCCESS;
 }
 
+namespace
+{
+    // A chest that always yields an item some quest asks for exists *for* that
+    // quest - Frozen Rune, Netherwing Egg, Un'Goro Dirt Pile, the Power
+    // Crystals. One that merely might hold something a quest wants is a
+    // Battered Chest with a 0.02% Peacebloom in it, and marking those would put
+    // a sparkle on every crate in the world the moment anyone picked up a
+    // gathering quest. The guaranteed drop is the whole difference, which is
+    // why nothing below looks at chance any further.
+    bool HoldsGuaranteedQuestItem(GameObjectTemplate const& info, std::unordered_set<uint32> const& questItems)
+    {
+        // Herb and ore nodes are left alone on purpose. They would qualify -
+        // several gathering quests ask for exactly what they hold - and they
+        // already have a way of being found, in Find Herbs and Find Minerals;
+        // lighting up every Peacebloom in Elwynn is not the same feature.
+        if (LockEntry const* lock = sLockStore.LookupEntry(info.chest.lockId))
+            for (uint8 i = 0; i < MAX_LOCK_CASE; ++i)
+                if (lock->Type[i] == LOCK_KEY_SKILL
+                    && (lock->Index[i] == LOCKTYPE_HERBALISM || lock->Index[i] == LOCKTYPE_MINING))
+                    return false;
+
+        std::unordered_set<uint32> guaranteed;
+        LootTemplates_Gameobject.GetGuaranteedItems(info.GetLootId(), guaranteed);
+
+        for (uint32 item : guaranteed)
+            if (questItems.count(item))
+                return true;
+
+        return false;
+    }
+}
+
 void ObjectMgr::LoadGameObjectForQuests()
 {
     uint32 oldMSTime = getMSTime();
@@ -9396,6 +9428,15 @@ void ObjectMgr::LoadGameObjectForQuests()
     }
 
     uint32 count = 0;
+
+    // Every item any quest asks to be brought in. Built here rather than kept
+    // as a member because this is the only thing that wants it, and it is read
+    // once at startup.
+    std::unordered_set<uint32> questItems;
+    for (auto const& [questId, quest] : _questTemplates)
+        for (uint8 i = 0; i < QUEST_ITEM_OBJECTIVES_COUNT; ++i)
+            if (quest->RequiredItemId[i])
+                questItems.insert(quest->RequiredItemId[i]);
 
     // collect GO entries for GO that must activated
     GameObjectTemplateContainer* gotc = const_cast<GameObjectTemplateContainer*>(GetGameObjectTemplates());
@@ -9414,7 +9455,8 @@ void ObjectMgr::LoadGameObjectForQuests()
                     uint32 loot_id = (itr->second.GetLootId());
 
                     // find quest loot for GO
-                    if (itr->second.chest.questId || LootTemplates_Gameobject.HaveQuestLootFor(loot_id))
+                    if (itr->second.chest.questId || LootTemplates_Gameobject.HaveQuestLootFor(loot_id)
+                        || HoldsGuaranteedQuestItem(itr->second, questItems))
                     {
                         itr->second.IsForQuests = true;
                         ++count;

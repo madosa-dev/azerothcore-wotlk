@@ -1332,7 +1332,17 @@ bool GameObject::ActivateToQuest(Player* target) const
         case GAMEOBJECT_TYPE_CHEST:
             {
                 // scan GO chest with loot including quest items
-                if (target->GetQuestStatus(GetGOInfo()->chest.questId) == QUEST_STATUS_INCOMPLETE || LootTemplates_Gameobject.HaveQuestLootForPlayer(GetGOInfo()->GetLootId(), target))
+                //
+                // The third case is the one that is not about quest-flagged
+                // loot: an object that always yields an item this player still
+                // needs. Frozen Rune, Netherwing Egg and the like carry their
+                // quest item as an ordinary drop, so nothing above notices them
+                // and they used to sit in the world giving no sign at all.
+                // Guaranteed, deliberately - a sparkle promises the thing is
+                // there, and a 0.02% chance in a Battered Chest does not.
+                if (target->GetQuestStatus(GetGOInfo()->chest.questId) == QUEST_STATUS_INCOMPLETE
+                    || LootTemplates_Gameobject.HaveQuestLootForPlayer(GetGOInfo()->GetLootId(), target)
+                    || LootTemplates_Gameobject.HaveGuaranteedQuestItemForPlayer(GetGOInfo()->GetLootId(), target))
                 {
                     //TODO: fix this hack
                     //look for battlegroundAV for some objects which are only activated after mine gots captured by own team

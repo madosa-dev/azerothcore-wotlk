@@ -235,6 +235,19 @@ bool LootStore::HaveQuestLootForPlayer(uint32 loot_id, Player const* player) con
     return false;
 }
 
+void LootStore::GetGuaranteedItems(uint32 loot_id, std::unordered_set<uint32>& items) const
+{
+    LootTemplateMap::const_iterator itr = m_LootTemplates.find(loot_id);
+    if (itr != m_LootTemplates.end())
+        itr->second->CollectGuaranteedItems(m_LootTemplates, items);
+}
+
+bool LootStore::HaveGuaranteedQuestItemForPlayer(uint32 loot_id, Player const* player) const
+{
+    LootTemplateMap::const_iterator itr = m_LootTemplates.find(loot_id);
+    return itr != m_LootTemplates.end() && itr->second->HasGuaranteedQuestItemForPlayer(m_LootTemplates, player);
+}
+
 void LootStore::ResetConditions()
 {
     for (LootTemplateMap::iterator itr = m_LootTemplates.begin(); itr != m_LootTemplates.end(); ++itr)
@@ -1764,6 +1777,51 @@ bool LootTemplate::HasQuestDrop(LootTemplateMap const& store) const
                 return true;
             }
         }
+    }
+
+    return false;
+}
+
+// Every item this template always yields. Only ungrouped entries can be
+// certain: a group rolls one of its members, so nothing inside one is
+// guaranteed however high its chance is written. References are followed, and
+// a reference is only guaranteed if it is itself certain to be taken.
+void LootTemplate::CollectGuaranteedItems(LootTemplateMap const& store, std::unordered_set<uint32>& items) const
+{
+    for (LootStoreItem* item : Entries)
+    {
+        if (item->chance < 100.0f)
+            continue;
+
+        if (item->reference)
+        {
+            LootTemplateMap::const_iterator referenced = store.find(std::abs(item->reference));
+            if (referenced != store.end())
+                referenced->second->CollectGuaranteedItems(store, items);
+        }
+        else
+            items.insert(item->itemid);
+    }
+}
+
+// True if one of those items is one the player still needs for a quest. Kept
+// separate from the collecting walk so the common case - a player standing near
+// an object - answers without building a set.
+bool LootTemplate::HasGuaranteedQuestItemForPlayer(LootTemplateMap const& store, Player const* player) const
+{
+    for (LootStoreItem* item : Entries)
+    {
+        if (item->chance < 100.0f)
+            continue;
+
+        if (item->reference)
+        {
+            LootTemplateMap::const_iterator referenced = store.find(std::abs(item->reference));
+            if (referenced != store.end() && referenced->second->HasGuaranteedQuestItemForPlayer(store, player))
+                return true;
+        }
+        else if (player->HasQuestForItem(item->itemid))
+            return true;
     }
 
     return false;
