@@ -20,6 +20,12 @@ local BUTTON_SIZE = 24
 local RING_MARGIN = 10        -- how far outside the minimap's edge the ring sits
 local DEFAULT_ANGLE = 205     -- lower left, where the fewest addons land
 
+-- HIGH rather than the MEDIUM a minimap button conventionally uses, because the
+-- things it was sliding under are on MEDIUM; not DIALOG, which is where menus
+-- and popups live and where a decoration has no business being.
+local BUTTON_STRATA = "HIGH"
+local BUTTON_LEVEL = 100
+
 -- Which quadrants of the minimap are round, per shape, in the order
 -- bottom-right, bottom-left, top-right, top-left.
 --
@@ -94,9 +100,22 @@ local function db()
 end
 
 local function UpdatePosition()
+    if not button then return end
     local x, y = RingOffset(db().angle or DEFAULT_ANGLE)
     button:ClearAllPoints()
     button:SetPoint("CENTER", Minimap, "CENTER", x, y)
+end
+
+-- Setting a frame's strata takes its children with it, and ElvUI configures the
+-- minimap at PLAYER_LOGIN - long after this addon has built its button at
+-- ADDON_LOADED. So whatever the button was put above at build time, ElvUI's
+-- Minimap:SetFrameStrata('LOW') afterwards puts it back underneath. Stating it
+-- once is not enough; it has to be restated whenever the minimap's own layer
+-- moves, which also covers a profile switch or a resize later in the session.
+local function AssertLayer()
+    if not button then return end
+    button:SetFrameStrata(BUTTON_STRATA)
+    button:SetFrameLevel(BUTTON_LEVEL)
 end
 
 -- The angle from the minimap's centre to the cursor. GetCursorPosition() is in
@@ -137,10 +156,6 @@ local function Build()
     -- has the distinction built in - the client simply does not fire OnClick
     -- when a drag happened - which is why every minimap button is one.
     button = MadosaUI.Button(Minimap, "M", BUTTON_SIZE, BUTTON_SIZE, "MadosaControlMinimapButton")
-    -- ElvUI puts the minimap at strata LOW, level 10; HIGH clears that and
-    -- anything else that ends up over the map without a fight.
-    button:SetFrameStrata("HIGH")
-    button:SetFrameLevel(Minimap:GetFrameLevel() + 8)
     button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     button:RegisterForDrag("LeftButton")
     button:SetMovable(true)
@@ -188,9 +203,33 @@ local function Build()
         self:SetScript("OnUpdate", nil)
     end)
 
+    AssertLayer()
     UpdatePosition()
     Recolour()
     if db().hide then button:Hide() end
+
+    -- Re-stated after anything moves the minimap, rather than trusted to hold.
+    -- AssertLayer only ever touches the button, so hooking the minimap's own
+    -- setters cannot recurse.
+    if hooksecurefunc then
+        hooksecurefunc(Minimap, "SetFrameStrata", AssertLayer)
+        hooksecurefunc(Minimap, "SetFrameLevel", AssertLayer)
+        -- The size matters as much as the layer: at ADDON_LOADED the minimap is
+        -- still Blizzard's 140px, and the ring is measured from whatever it is
+        -- when asked. ElvUI resizing it to 220 later would otherwise leave the
+        -- button on the ring of a map that no longer exists.
+        hooksecurefunc(Minimap, "SetWidth", UpdatePosition)
+        hooksecurefunc(Minimap, "SetHeight", UpdatePosition)
+    end
+
+    -- ElvUI is finished by the time the world is up; this is the backstop for
+    -- anything that changed the minimap without going through those setters.
+    local watcher = CreateFrame("Frame")
+    watcher:RegisterEvent("PLAYER_ENTERING_WORLD")
+    watcher:SetScript("OnEvent", function()
+        AssertLayer()
+        UpdatePosition()
+    end)
 end
 
 -- Called from Core.lua once MadosaControlDB has been restored.

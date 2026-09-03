@@ -880,6 +880,23 @@ pulled in by the ring margin, deliberately: a button at the corner of a square
 would otherwise stand 170px off the centre where the flanks put it at 120.
 LibDBIcon does exactly this, which is why Questie's button behaves the same.
 
+**None of that is stated once and trusted.** Setting a frame's strata takes its
+children with it, and ElvUI configures the minimap at `PLAYER_LOGIN` - long
+after this addon builds its button at `ADDON_LOADED`. Whatever the button was
+put above at build time, ElvUI's `Minimap:SetFrameStrata('LOW')` afterwards puts
+it back underneath, which is how it kept sliding under things. The size is the
+same story: at `ADDON_LOADED` the minimap is still Blizzard's 140px, so a ring
+measured then belongs to a map that no longer exists a second later.
+
+So the strata (`HIGH`, level 100) and the position are re-stated whenever the
+minimap's own layer or size moves - `hooksecurefunc` on its `SetFrameStrata`,
+`SetFrameLevel`, `SetWidth` and `SetHeight` - with `PLAYER_ENTERING_WORLD` as a
+backstop for anything that changed the minimap without going through those. A
+profile switch or a resize mid-session is then handled by the same code. `HIGH`
+rather than the `MEDIUM` a minimap button conventionally uses, because what it
+was sliding under is on `MEDIUM`; not `DIALOG`, where menus and popups live and
+a decoration has no business being.
+
 `/madosa minimap debug` prints the size, the shape, the angle and where it
 lands, plus `GetMouseFocus()` - the frame actually taking the mouse. On someone
 else's UI that is worth more than any amount of reasoning about frame strata.
