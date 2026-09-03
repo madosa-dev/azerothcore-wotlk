@@ -20,15 +20,70 @@ local BUTTON_SIZE = 24
 local RING_MARGIN = 10        -- how far outside the minimap's edge the ring sits
 local DEFAULT_ANGLE = 205     -- lower left, where the fewest addons land
 
--- Measured, not assumed. The usual constant for this is 80, which is the ring
--- of a stock 140px minimap - and putting a button 80px from the centre of the
--- 220px one ElvUI is configured with here lands it *inside* the map, on top of
--- the minimap's own surface, where it draws perfectly and never sees a mouse
--- event. That is what "the icon is there and I cannot click it" was.
-local function RingRadius()
-    local width = Minimap:GetWidth()
-    if not width or width <= 0 then return 80 end
-    return width / 2 + RING_MARGIN
+-- Which quadrants of the minimap are round, per shape, in the order
+-- bottom-right, bottom-left, top-right, top-left.
+--
+-- An addon that reshapes the minimap announces it through the global
+-- GetMinimapShape(), which is the whole reason a button can follow a square
+-- edge without knowing anything about the addon that made it square - ElvUI
+-- returns 'SQUARE' or 'ROUND' from its own setting
+-- (ElvUI/Core/Modules/Maps/Minimap.lua:576). The corner and side shapes are
+-- what minimap addons actually declare; they cost a table, and they are the
+-- difference between following an edge and floating off it.
+local MINIMAP_SHAPES = {
+    ROUND                     = { true,  true,  true,  true  },
+    SQUARE                    = { false, false, false, false },
+    ["CORNER-TOPLEFT"]        = { false, false, false, true  },
+    ["CORNER-TOPRIGHT"]       = { false, false, true,  false },
+    ["CORNER-BOTTOMLEFT"]     = { false, true,  false, false },
+    ["CORNER-BOTTOMRIGHT"]    = { true,  false, false, false },
+    ["SIDE-LEFT"]             = { false, true,  false, true  },
+    ["SIDE-RIGHT"]            = { true,  false, true,  false },
+    ["SIDE-TOP"]              = { false, false, true,  true  },
+    ["SIDE-BOTTOM"]           = { true,  true,  false, false },
+    ["TRICORNER-TOPLEFT"]     = { false, true,  true,  true  },
+    ["TRICORNER-TOPRIGHT"]    = { true,  false, true,  true  },
+    ["TRICORNER-BOTTOMLEFT"]  = { true,  true,  false, true  },
+    ["TRICORNER-BOTTOMRIGHT"] = { true,  true,  true,  false },
+}
+
+local function MinimapShape()
+    return (GetMinimapShape and GetMinimapShape()) or "ROUND"
+end
+
+-- Where on the minimap's edge a given angle lands, as an offset from its
+-- centre. Measured from the minimap rather than from the constant 80 every
+-- example uses: that is the ring of a stock 140px minimap, and 80px from the
+-- centre of the 220px one ElvUI is configured with here is *inside* the map,
+-- on its own surface, where a button draws perfectly and never sees a mouse
+-- event.
+local function RingOffset(angleDegrees)
+    local angle = math.rad(angleDegrees)
+    local x, y = math.cos(angle), math.sin(angle)
+
+    local quadrant = 1
+    if x < 0 then quadrant = quadrant + 1 end
+    if y > 0 then quadrant = quadrant + 2 end
+
+    local w = Minimap:GetWidth() / 2 + RING_MARGIN
+    local h = Minimap:GetHeight() / 2 + RING_MARGIN
+    if w <= RING_MARGIN or h <= RING_MARGIN then
+        w, h = 80, 80   -- before the minimap has been given a size
+    end
+
+    if (MINIMAP_SHAPES[MinimapShape()] or MINIMAP_SHAPES.ROUND)[quadrant] then
+        return x * w, y * h   -- a round quadrant: straight out onto the ellipse
+    end
+
+    -- A square quadrant. Push the point out along its own direction until it is
+    -- past the corner, then clamp it back inside the box: the clamp is what
+    -- makes the button slide along a flat side instead of cutting across it,
+    -- and it is why an angle is still the right thing to store for a minimap
+    -- that is not round.
+    local diagonalW = math.sqrt(2 * w * w) - RING_MARGIN
+    local diagonalH = math.sqrt(2 * h * h) - RING_MARGIN
+    return math.max(-w, math.min(x * diagonalW, w)),
+           math.max(-h, math.min(y * diagonalH, h))
 end
 
 local button
@@ -39,11 +94,9 @@ local function db()
 end
 
 local function UpdatePosition()
-    local angle = math.rad(db().angle or DEFAULT_ANGLE)
-    local radius = RingRadius()
+    local x, y = RingOffset(db().angle or DEFAULT_ANGLE)
     button:ClearAllPoints()
-    button:SetPoint("CENTER", Minimap, "CENTER",
-        radius * math.cos(angle), radius * math.sin(angle))
+    button:SetPoint("CENTER", Minimap, "CENTER", x, y)
 end
 
 -- The angle from the minimap's centre to the cursor. GetCursorPosition() is in
@@ -174,10 +227,12 @@ function MadosaControl_DebugMinimapButton()
         return
     end
 
+    local angle = db().angle or DEFAULT_ANGLE
+    local x, y = RingOffset(angle)
     out:AddMessage(string.format(
-        "|cff1ba6edMadosaControl|r: minimap %.0fpx, ring radius %.0f, angle %.0f, button %.0fpx %s",
-        Minimap:GetWidth(), RingRadius(), db().angle or DEFAULT_ANGLE, button:GetWidth(),
-        button:IsShown() and "shown" or "hidden"))
+        "|cff1ba6edMadosaControl|r: minimap %.0fx%.0f %s, angle %.0f -> %.0f, %.0f, button %.0fpx %s",
+        Minimap:GetWidth(), Minimap:GetHeight(), MinimapShape(), angle, x, y,
+        button:GetWidth(), button:IsShown() and "shown" or "hidden"))
     out:AddMessage(string.format("  button: strata %s level %d   minimap: strata %s level %d",
         button:GetFrameStrata(), button:GetFrameLevel(),
         Minimap:GetFrameStrata(), Minimap:GetFrameLevel()))

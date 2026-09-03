@@ -857,16 +857,32 @@ needs a timing guard that then eats real clicks. A Button has the distinction
 built in - the client does not fire `OnClick` when a drag happened - which is
 why every minimap button is one.
 
-**The ring is measured, not assumed.** The usual constant for this is 80, which
-is the ring of a stock 140px minimap - and this install's is 220px, because
-ElvUI is configured that way. 80px from the centre of a 220px minimap is
-*inside* the map, sitting on the minimap's own surface, where the button draws
-perfectly and never sees a mouse event: the icon is there and nothing happens
-when you click it, tooltip included. The radius comes from
-`Minimap:GetWidth() / 2` plus a margin, so it follows whatever size the minimap
-is. `/madosa minimap debug` prints those numbers plus `GetMouseFocus()`, which
-names the frame actually taking the mouse - on someone else's UI that is worth
-more than any amount of reasoning about strata.
+**The ring is measured, and it follows the minimap's shape.** The usual constant
+for this is 80, which is the ring of a stock 140px minimap - and this install's
+is 220px, because ElvUI is configured that way. 80px from the centre of a 220px
+minimap is *inside* the map, sitting on the minimap's own surface, where the
+button draws perfectly and never sees a mouse event: the icon is there and
+nothing happens when you click it, tooltip included.
+
+The size comes from `Minimap:GetWidth()`, and the shape from the global
+`GetMinimapShape()` - the convention an addon that reshapes the minimap
+announces itself through, which is how a button follows a square edge while
+knowing nothing about the addon that made it square. ElvUI returns `SQUARE` or
+`ROUND` from its own setting (`ElvUI/Core/Modules/Maps/Minimap.lua:576`), and
+the fourteen corner and side shapes other addons declare cost one table.
+
+On a round quadrant the angle goes straight out onto the ellipse. On a square
+one the point is pushed out along its own direction until it is past the corner
+and then clamped back into the box - the clamp is what makes the button slide
+along a flat side instead of cutting across it, and it is why an angle is still
+the right thing to store for a minimap that is not round. The corners come out
+pulled in by the ring margin, deliberately: a button at the corner of a square
+would otherwise stand 170px off the centre where the flanks put it at 120.
+LibDBIcon does exactly this, which is why Questie's button behaves the same.
+
+`/madosa minimap debug` prints the size, the shape, the angle and where it
+lands, plus `GetMouseFocus()` - the frame actually taking the mouse. On someone
+else's UI that is worth more than any amount of reasoning about frame strata.
 
 Its position is stored as an **angle on the minimap's ring**, not as a point:
 dragging it is dragging it around the circle, and one number survives a UI scale
