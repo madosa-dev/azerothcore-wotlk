@@ -278,13 +278,12 @@ are substantial enough to stand on their own).
   Worldforged item once, tracked in `character_worldforged_ascension_loot`. That
   table is keyed by *item*, not by spot, because the 1509 items are spread over
   3599 places - claiming a Silverbound Dagger at one of them finishes every other
-  spot holding one, instead of letting you farm duplicates a few hills apart. The
-  streaming scan knows about it, so a cache you have finished simply stops
-  appearing rather than standing there to refuse you, and the world visibly
-  empties out as your collection fills up. The per-spot respawn timer stays
+  spot holding one, instead of letting you farm duplicates a few hills apart.
   A cache is never consumed and never removed: it stands where it stands, for
   everyone, and claiming its item only records that this character has had it.
   Clicking one you have finished says so rather than handing out a second copy.
+  What empties out as a collection fills is the *map*, not the world - see
+  `addon/WorldforgedAtlas` below.
 
   **Two things about the placement**, both found by walking to a spot in-game.
   LootCollector records one find *per player*, so a single Ascension chest
@@ -375,6 +374,48 @@ are substantial enough to stand on their own).
   so `clientpatch`'s own rows survive (its XP Boost spell is still there
   afterwards, which is the check worth repeating) - and that also means **run it
   after `clientpatch/build_patches.py`, never before**.
+
+  **`addon/WorldforgedAtlas` + `tools/worldforged/build_atlas_addon.py`**: the
+  map. Ascension had the `LootCollector` addon for exactly this, and without
+  something like it the only way to find a cache is to walk over it - nothing is
+  announced and nothing sparkles from a distance. The addon draws a pin for every
+  find location on the world map, the continent map and the minimap, wearing the
+  icon of the item lying there inside a quality-coloured ring. It works alongside
+  Mapster without knowing about it: pins are children of `WorldMapDetailFrame`,
+  so Mapster's rescaling carries them along.
+
+  - **The pins come from the server's own table**, not from LootCollector again.
+    `build_atlas_addon.py` reads `mod_madosa_worldforged_ascension_spawns` and
+    `item_template` out of the live world database and inverts
+    `build_ascension_spawns.py`'s `zone_to_map()` back to the zone fractions the
+    map wants. The conversion is linear, so the inverse is exact - checked, not
+    assumed: all 1633 points round-trip to 0.000000 yards, and a point that would
+    not land inside its own zone's box is dropped rather than pinned to the wrong
+    hill. 1628 of 1633 survive; the other five name an item that is not in
+    `item_template`. Regenerating from the raw discoveries instead would put pins
+    where no cache stands, which is worse than no pin at all.
+  - **Claimed finds come over the wire.** Which items this character has already
+    had lives in `character_worldforged_ascension_loot`, and it is the difference
+    between a map of the world and a map of what is *left*. The addon asks for
+    the list on login over the same self-whisper + `LANG_ADDON` transport
+    MadosaControl uses, on its own `WFATLAS` prefix and deliberately **without**
+    that bridge's RBAC gate - the bridge writes server settings and is rightly
+    GM-only, this hands a player their own collection. A claim made in play is
+    pushed as it happens, so the pin disappears as the item goes in the bag. The
+    list is cached per character, so the map is already right on the next login
+    before the sync arrives.
+  - **Placement is Astrolabe's**, which is already installed here. It translates
+    a zone fraction onto whatever map is open and keeps minimap pins positioned
+    as the player moves. Two things worth knowing: its `RemoveAllMinimapIcons()`
+    drops every icon the *library* is tracking - Questie's included - so pins are
+    only ever handed back one at a time through `RemoveIconFromMinimap()`. And on
+    a continent map, only that continent's zones are walked: Astrolabe would
+    reject the rest anyway, but not before each had taken a frame and a slot off
+    the pin cap, and since the zone list is alphabetical the two continents
+    interleave, so the cap would have eaten into the pins being looked at.
+  - `/wfa` toggles the pins, `/wfa sync` re-asks the server. The panel on the
+    world map carries the zone's "N of M left here" count and filters for hiding
+    claimed finds, minimum quality, minimap pins and continent maps.
 
 - **`hardcore_pvp.sql` + `src/mod_madosa_hardcore_pvp.cpp` +
   `src/mod_madosa_hardcore_pvp_loot.cpp`**: **Hardcore PvP**, after Ascension

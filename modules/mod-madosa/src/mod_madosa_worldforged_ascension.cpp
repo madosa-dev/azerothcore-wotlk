@@ -71,12 +71,15 @@
 #include "Playerbots.h"
 #include "ScriptMgr.h"
 #include "StringFormat.h"
+#include "WorldPacket.h"
 #include "WorldSession.h"
 #include "WorldDatabase.h"
 
 #include <cmath>
+#include <cstring>
 #include <mutex>
 #include <shared_mutex>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -443,6 +446,73 @@ namespace
             guid, item, static_cast<int64>(GameTime::GetGameTime().count()));
     }
 
+    // ----------------------------------------------------------------------
+    // The WorldforgedAtlas addon
+    // ----------------------------------------------------------------------
+    //
+    // addon/WorldforgedAtlas draws a pin for every find location, and the only
+    // part of that it cannot know on its own is which items this character has
+    // already claimed - that lives in character_worldforged_ascension_loot and
+    // is the difference between a map of the world and a map of what is left.
+    //
+    // Same self-whisper + LANG_ADDON transport as mod_madosa_addon_bridge.cpp,
+    // on its own prefix and deliberately without that file's RBAC gate: the
+    // bridge writes server settings and is rightly GM-only, while this hands a
+    // player their own collection and nothing else.
+
+    constexpr char const* ATLAS_PREFIX = "WFATLAS\t";
+    constexpr char ATLAS_SEP = '~';
+
+    // Well inside the 255-byte ceiling on an addon chat message, with room for
+    // the prefix and the opcode. Item ids here run to seven digits.
+    constexpr size_t ATLAS_CHUNK = 200;
+
+    void SendAtlasPacket(Player* player, std::string const& opcode, std::string const& payload = "")
+    {
+        std::string wire = std::string(ATLAS_PREFIX) + opcode;
+        if (!payload.empty())
+            wire += ATLAS_SEP + payload;
+
+        WorldPacket data;
+        ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, nullptr, wire.c_str());
+        player->SendDirectMessage(&data);
+    }
+
+    // The claimed list, in chunks. BEGIN and END bracket it so the addon can
+    // swap the finished list in at once: a sync cut short by a disconnect then
+    // leaves the cached list from last login intact rather than half of one.
+    void SendClaimedItems(Player* player)
+    {
+        std::vector<uint32> claimed;
+        {
+            std::lock_guard<std::mutex> lock(stateMutex);
+            auto found = claimedItems.find(player->GetGUID().GetCounter());
+            if (found != claimedItems.end())
+                claimed.assign(found->second.begin(), found->second.end());
+        }
+
+        SendAtlasPacket(player, "BEGIN");
+
+        std::string chunk;
+        for (uint32 item : claimed)
+        {
+            std::string const id = std::to_string(item);
+            if (!chunk.empty() && chunk.size() + 1 + id.size() > ATLAS_CHUNK)
+            {
+                SendAtlasPacket(player, "CLAIMED", chunk);
+                chunk.clear();
+            }
+
+            if (!chunk.empty())
+                chunk += ATLAS_SEP;
+            chunk += id;
+        }
+
+        if (!chunk.empty())
+            SendAtlasPacket(player, "CLAIMED", chunk);
+
+        SendAtlasPacket(player, "END", std::to_string(claimed.size()));
+    }
 }
 
 class mod_madosa_worldforged_ascension_world : public WorldScript
@@ -488,6 +558,21 @@ public:
         // players can open a cache, so a bot's claimed set is never asked about.
         if (!player->GetSession() || !player->GetSession()->IsBot())
             LoadClaimedItems(player->GetGUID().GetCounter());
+    }
+
+    // The WorldforgedAtlas addon asking for this character's claimed items. The
+    // reply is not sent from OnPlayerLogin because the addon is not listening
+    // yet at that point - it asks once the world is up, and this answers.
+    bool OnPlayerCanUseChat(Player* player, uint32 /*type*/, uint32 language, std::string& msg,
+        Player* /*receiver*/) override
+    {
+        if (language != LANG_ADDON || msg.rfind(ATLAS_PREFIX, 0) != 0)
+            return true; // not ours - let normal whisper handling continue
+
+        if (msg.substr(strlen(ATLAS_PREFIX)) == "SYNC")
+            SendClaimedItems(player);
+
+        return false; // consumed - don't let it bounce back as a plain whisper
     }
 
     void OnPlayerLogout(Player* player) override
@@ -558,6 +643,7 @@ public:
 
         player->SendNewItem(created, 1, true, false);
         RecordClaim(playerGuid, item);
+        SendAtlasPacket(player, "CLAIM", std::to_string(item));
         MadosaChronicle::Record("worldforged", player, nullptr, int64(item),
             created->GetTemplate() ? created->GetTemplate()->Name1 : "");
 

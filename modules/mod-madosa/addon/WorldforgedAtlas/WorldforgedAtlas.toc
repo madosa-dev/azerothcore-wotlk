@@ -1,0 +1,10 @@
+## Interface: 30300
+## Title: WorldforgedAtlas
+## Notes: Shows every Ascension Worldforged find location on the world map and minimap
+## Author: madosa
+## Version: 1.0.0
+## OptionalDeps: !Astrolabe, Mapster
+## SavedVariablesPerCharacter: WorldforgedAtlasDB
+
+Data.lua
+Core.lua
