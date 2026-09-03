@@ -6,4 +6,5 @@
 ## SavedVariables: MadosaControlDB
 
 Widgets.lua
+Minimap.lua
 Core.lua

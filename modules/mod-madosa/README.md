@@ -832,10 +832,30 @@ carrying a value and greyscale for everything else. `Widgets.lua` is that whole
 idea - a `Panel` primitive plus the handful of controls built out of it -
 and `Core.lua` is the comms and the layout. No libraries and no media files:
 the only texture used is `WHITE8X8`, which the client already ships, so the
-addon stays two Lua files and a `.toc`. Changed-but-unapplied rows are marked
+addon stays three Lua files and a `.toc`. Changed-but-unapplied rows are marked
 in the accent colour and counted on the Apply button; Revert throws them away,
 and each row's "Default" button drops the DB override and returns that one
 setting to the conf file value.
+
+**The minimap button** (`Minimap.lua`) is hand-rolled rather than LibDBIcon.
+Four addons on this client ship that library and any of them would hand it over
+through LibStub - but only while that addon is enabled, and a button that
+disappears because someone turned off Questie is a worse bug than the sixty
+lines it takes to draw one. It follows the same rule as the rest of the addon:
+no libraries, no media. So no artwork either - Blizzard's round
+`MiniMap-TrackingBorder` would be the only thing here that is not flat, and the
+button is a `MadosaUI.Panel` with an **M** in it instead, which is both the
+addon's own look and what every minimap button ends up as once ElvUI has skinned
+it. The M turns the accent colour while the panel is open.
+
+Its position is stored as an **angle on the minimap's ring**, not as a point:
+dragging it is dragging it around the circle, and one number survives a UI scale
+change that a saved x/y offset would not. Left-click opens the panel,
+right-click hides the button, `/madosa minimap` brings it back. One thing worth
+knowing if you touch it: releasing the mouse to end a drag also fires
+`OnMouseUp`, so without a guard every reposition would open the panel too - the
+guard is a timestamp rather than a flag the click clears, so a mouse-up that
+never arrives heals itself instead of swallowing the next click.
 
 It talks to the server the same way every other WotLK GM-addon bridge does: a
 self-whisper (`SendAddonMessage(prefix, msg, "WHISPER", UnitName("player"))`)

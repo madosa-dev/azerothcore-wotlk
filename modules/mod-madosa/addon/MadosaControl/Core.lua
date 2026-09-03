@@ -465,6 +465,12 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         local name = ...
         if name == "MadosaControl" then
             BuildFrame()
+            MadosaControl_BuildMinimapButton()
+            -- Hooked rather than called from the toggle, so the button also
+            -- notices the panel's own close button and anything else that
+            -- hides it.
+            frame:HookScript("OnShow", MadosaControl_RefreshMinimapButton)
+            frame:HookScript("OnHide", MadosaControl_RefreshMinimapButton)
         end
     elseif event == "CHAT_MSG_ADDON" then
         local prefix, message = ...
@@ -478,9 +484,13 @@ end)
 -- Slash command
 ----------------------------------------------------------------------------
 
-SLASH_MADOSACONTROL1 = "/madosa"
-SLASH_MADOSACONTROL2 = "/mc"
-SlashCmdList["MADOSACONTROL"] = function()
+-- Both the slash command and the minimap button open the panel, so opening it
+-- is a function rather than something the slash command happens to do.
+function MadosaControl_IsShown()
+    return frame and frame:IsShown()
+end
+
+function MadosaControl_Toggle()
     if not frame then return end
 
     if frame:IsShown() then
@@ -490,4 +500,17 @@ SlashCmdList["MADOSACONTROL"] = function()
         SetStatus("Connecting...")
         SendCommand("HELLO")
     end
+end
+
+SLASH_MADOSACONTROL1 = "/madosa"
+SLASH_MADOSACONTROL2 = "/mc"
+SlashCmdList["MADOSACONTROL"] = function(input)
+    if string.lower(strtrim(input or "")) == "minimap" then
+        local shown = MadosaControl_ToggleMinimapButton()
+        DEFAULT_CHAT_FRAME:AddMessage("|cff1ba6edMadosaControl|r: minimap button " ..
+            (shown and "shown." or "hidden."))
+        return
+    end
+
+    MadosaControl_Toggle()
 end
