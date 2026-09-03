@@ -848,14 +848,19 @@ button is a `MadosaUI.Panel` with an **M** in it instead, which is both the
 addon's own look and what every minimap button ends up as once ElvUI has skinned
 it. The M turns the accent colour while the panel is open.
 
+It is a `MadosaUI.Button`, and that part is load-bearing. The first version was
+a `MadosaUI.Panel` - a `Frame` - which draws identically and cannot be clicked
+in practice: a Frame with `EnableMouse` does receive `OnMouseUp`, but with
+`RegisterForDrag` on it the couple of pixels a hand moves during a press is
+enough for the client to call it a drag, and telling a drag from a click by hand
+needs a timing guard that then eats real clicks. A Button has the distinction
+built in - the client does not fire `OnClick` when a drag happened - which is
+why every minimap button is one.
+
 Its position is stored as an **angle on the minimap's ring**, not as a point:
 dragging it is dragging it around the circle, and one number survives a UI scale
 change that a saved x/y offset would not. Left-click opens the panel,
-right-click hides the button, `/madosa minimap` brings it back. One thing worth
-knowing if you touch it: releasing the mouse to end a drag also fires
-`OnMouseUp`, so without a guard every reposition would open the panel too - the
-guard is a timestamp rather than a flag the click clears, so a mouse-up that
-never arrives heals itself instead of swallowing the next click.
+right-click hides the button, `/madosa minimap` brings it back.
 
 It talks to the server the same way every other WotLK GM-addon bridge does: a
 self-whisper (`SendAddonMessage(prefix, msg, "WHISPER", UnitName("player"))`)

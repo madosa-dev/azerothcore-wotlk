@@ -8,9 +8,9 @@
 --
 -- So no artwork either. Blizzard's round MiniMap-TrackingBorder is the usual
 -- frame for one of these, and it would be the only thing in this addon that is
--- not flat; the button is a MadosaUI.Panel with an "M" in it instead, which is
--- both the addon's look and, on a UI running ElvUI, what every other minimap
--- button ends up skinned into anyway.
+-- not flat; it is a MadosaUI.Button with an "M" in it instead, which is both
+-- the addon's look and, on a UI running ElvUI, what every other minimap button
+-- ends up skinned into anyway.
 --
 -- Position is an angle on the minimap's ring, not a point: dragging it is
 -- dragging it around the circle, and one number survives a UI scale change that
@@ -54,34 +54,38 @@ local function OnDragUpdate()
     end
 end
 
+local function Recolour()
+    if not button then return end
+    -- The accent colour is what carries a value everywhere else in this addon;
+    -- here it is what says the panel is open.
+    local open = MadosaControl_IsShown and MadosaControl_IsShown()
+    local c = open and MadosaUI.color.accent or MadosaUI.color.text
+    button.label:SetTextColor(c[1], c[2], c[3], c[4] or 1)
+end
+
 local function Build()
-    button = MadosaUI.Panel(Minimap, MadosaUI.color.panel, true, "MadosaControlMinimapButton")
-    button:SetWidth(BUTTON_SIZE)
-    button:SetHeight(BUTTON_SIZE)
-    button:SetFrameStrata("MEDIUM")
+    -- A Button, not a MadosaUI.Panel. A Frame with EnableMouse does receive
+    -- OnMouseUp, so the first version looked right and would not click: with
+    -- RegisterForDrag on it, the couple of pixels a hand moves during a press
+    -- is enough for the client to call it a drag, and telling that apart from a
+    -- click by hand needs a timing guard that then eats real clicks. A Button
+    -- has the distinction built in - the client simply does not fire OnClick
+    -- when a drag happened - which is why every minimap button is one.
+    button = MadosaUI.Button(Minimap, "M", BUTTON_SIZE, BUTTON_SIZE)
+    button:SetFrameStrata("MEDIUM")   -- above the minimap itself, whatever it is in
     button:SetFrameLevel(Minimap:GetFrameLevel() + 8)
-    button:EnableMouse(true)
+    button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     button:RegisterForDrag("LeftButton")
     button:SetMovable(true)
 
-    local label = button:CreateFontString(nil, "OVERLAY")
-    MadosaUI.Font(label, 14, "OUTLINE")
-    label:SetPoint("CENTER", 0, 0)
-    label:SetText("M")
-    button.label = label
-
-    -- The accent colour is what carries a value everywhere else in this addon;
-    -- here it is what says the panel is open.
-    local function Recolour()
-        local open = MadosaControl_IsShown and MadosaControl_IsShown()
-        local c = open and MadosaUI.color.accent or MadosaUI.color.text
-        label:SetTextColor(c[1], c[2], c[3], 1)
-    end
+    MadosaUI.Font(button.label, 14, "OUTLINE")
     button.Recolour = Recolour
 
+    -- MadosaUI.Button lights its label on hover, which is the one thing the
+    -- label already means here, so the border carries the hover instead.
     button:SetScript("OnEnter", function(self)
-        self:SetBackdropColor(MadosaUI.color.row[1], MadosaUI.color.row[2],
-            MadosaUI.color.row[3], MadosaUI.color.row[4])
+        local a = MadosaUI.color.accent
+        self:SetBackdropBorderColor(a[1], a[2], a[3], a[4])
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
         GameTooltip:AddLine("MadosaControl", 1, 1, 1)
         GameTooltip:AddLine("Left-click to open the panel", 0.7, 0.7, 0.7)
@@ -91,18 +95,13 @@ local function Build()
     end)
 
     button:SetScript("OnLeave", function(self)
-        self:SetBackdropColor(MadosaUI.color.panel[1], MadosaUI.color.panel[2],
-            MadosaUI.color.panel[3], MadosaUI.color.panel[4])
+        local b = MadosaUI.color.border
+        self:SetBackdropBorderColor(b[1], b[2], b[3], b[4])
+        Recolour()
         GameTooltip:Hide()
     end)
 
-    button:SetScript("OnMouseUp", function(_, click)
-        -- Releasing the button to end a drag fires this too, so without the
-        -- guard every reposition would also open the panel. A timestamp rather
-        -- than a flag the click has to clear: if the mouse-up never arrives,
-        -- this heals itself on its own instead of swallowing the next click.
-        if button.draggedAt and GetTime() - button.draggedAt < 0.2 then return end
-
+    button:SetScript("OnClick", function(_, click)
         if click == "RightButton" then
             db().hide = true
             button:Hide()
@@ -120,7 +119,6 @@ local function Build()
 
     button:SetScript("OnDragStop", function(self)
         self:SetScript("OnUpdate", nil)
-        self.draggedAt = GetTime()
     end)
 
     UpdatePosition()
@@ -148,5 +146,5 @@ end
 
 -- The panel tells the button when it opens or closes, so the "M" can say so.
 function MadosaControl_RefreshMinimapButton()
-    if button and button.Recolour then button.Recolour() end
+    Recolour()
 end
