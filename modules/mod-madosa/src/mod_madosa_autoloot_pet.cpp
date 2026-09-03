@@ -35,13 +35,43 @@
 // the side-effect-free LootItemInSlot() peek, and for the rest (e.g. a
 // master-loot restriction) the loop just notices the session got released
 // and reopens it via SendLoot() before continuing to the next slot.
+//
+// Reaching a corpse that is not underfoot
+// ---------------------------------------
+// Looting is gated on INTERACTION_DISTANCE (5.5 yards) in four separate places
+// - Player::SendLoot(), both loot opcode handlers, and DoLootRelease() - which
+// is right for a player reaching into a corpse and wrong for a bot doing it on
+// their behalf. A kill made at range leaves its corpse where it fell, so before
+// this the pet only worked for things killed in melee: a hunter or a caster
+// watched it do nothing at all, which is not a subtle failure but it does look
+// like one, because the same character's melee kills loot fine.
+//
+// Rather than reimplement those checks' surroundings, the core asks
+// PlayerScript::OnPlayerCanLootOutOfRange() when a corpse is out of reach, and
+// this script answers true for exactly the corpse it is looting, for exactly
+// as long as it is looting it. Everything else - permission, group rolls,
+// master loot, the gold split, achievements - runs the same code it always
+// did. The window is a thread_local rather than a plain global because maps
+// update in parallel: two players on two maps can be inside AutoLoot() at the
+// same moment, and each thread must only ever see its own.
+//
+// The release path is the one that is easy to miss and the worst to get wrong.
+// DoLootRelease() is where an emptied corpse loses UNIT_DYNFLAG_LOOTABLE and
+// gets AllLootRemovedFromCorpse() and loot->clear(); its distance check returns
+// before all of that. Lift the first three gates and not this one and the pet
+// works perfectly while leaving a trail of empty corpses that still advertise
+// loot - a worse bug than the one being fixed.
+//
+// No distance limit is imposed on a kill: you killed it, the loot recipient
+// rules already say it is yours, and a hunter's 41 yards is as legitimate as a
+// warrior's 3. The catch-up loot on summoning keeps a bound, because there the
+// kill could have been minutes and a zone ago.
 
 #include "mod_madosa_settings.h"
 
 #include "Creature.h"
 #include "Loot/LootMgr.h"
 #include "ObjectAccessor.h"
-#include "ObjectDefines.h"
 #include "Player.h"
 #include "ScriptMgr.h"
 #include "SharedDefines.h"
@@ -55,6 +85,12 @@ namespace
     constexpr uint32 LOOT_RAT_ENTRY = 16549; // "Lootbot" (renamed from "Whiskers the Rat") - confirmed in-game
     constexpr uint32 OMNIBOT_ENTRY  = 40703; // "Omnibot" (renamed from "Lil' XT") - see service_pets.sql
 
+    // How far the corpse of the last kill may be when the pet is summoned and
+    // catches up on it. Comfortably past any weapon range, so summoning right
+    // after a ranged kill works, and still close enough that it is plainly the
+    // thing you just killed rather than something you left behind a hill ago.
+    constexpr float SUMMON_CATCHUP_RANGE = 60.0f;
+
     // Omnibot exists because only one companion can be summoned at a time, so it
     // has to cover auto-looting too - otherwise picking it would silently cost the
     // player Lootbot's whole reason for existing.
@@ -67,6 +103,32 @@ namespace
     // Lootbot right after a kill can catch that corpse too. Only the latest
     // one is tracked - deliberately not a full nearby-corpse sweep.
     std::unordered_map<ObjectGuid, ObjectGuid> lastLootableKill;
+
+    // The one corpse this thread is currently auto-looting, and for whom. Read
+    // by the OnPlayerCanLootOutOfRange hook and set only by the guard below, so
+    // the distance gate is lifted for this loot and nothing else - a client
+    // packet arriving for any other corpse still finds it shut.
+    thread_local ObjectGuid t_reachingFor;
+    thread_local ObjectGuid t_reachingPlayer;
+
+    class ReachGuard
+    {
+    public:
+        ReachGuard(Player* player, ObjectGuid loot)
+        {
+            t_reachingPlayer = player->GetGUID();
+            t_reachingFor = loot;
+        }
+
+        ~ReachGuard()
+        {
+            t_reachingPlayer.Clear();
+            t_reachingFor.Clear();
+        }
+
+        ReachGuard(ReachGuard const&) = delete;
+        ReachGuard& operator=(ReachGuard const&) = delete;
+    };
 
     bool HasAutoLootCompanion(Player* player)
     {
@@ -82,6 +144,8 @@ namespace
     {
         ObjectGuid guid = target->GetGUID();
         Loot* loot = &target->loot;
+
+        ReachGuard reach(player, guid);
 
         player->SendLoot(guid, LOOT_CORPSE);
         if (player->GetLootGUID() != guid)
@@ -132,6 +196,13 @@ class mod_madosa_autoloot_pet : public PlayerScript
 public:
     mod_madosa_autoloot_pet() : PlayerScript("mod_madosa_autoloot_pet") { }
 
+    // Lift the core's INTERACTION_DISTANCE gate for the corpse AutoLoot() is
+    // working on right now, and for nothing else. See the note at the top.
+    [[nodiscard]] bool OnPlayerCanLootOutOfRange(Player* player, ObjectGuid lootGuid) override
+    {
+        return t_reachingFor && lootGuid == t_reachingFor && player->GetGUID() == t_reachingPlayer;
+    }
+
     void OnPlayerCreatureKill(Player* killer, Creature* killed) override
     {
         if (!MadosaSettings::GetAutoLootPetEnable())
@@ -161,7 +232,8 @@ public:
             return;
 
         Creature* target = ObjectAccessor::GetCreature(*player, itr->second);
-        if (target && target->IsInWorld() && target->HasDynamicFlag(UNIT_DYNFLAG_LOOTABLE) && player->IsWithinDistInMap(target, INTERACTION_DISTANCE))
+        if (target && target->IsInWorld() && target->HasDynamicFlag(UNIT_DYNFLAG_LOOTABLE)
+            && player->IsWithinDistInMap(target, SUMMON_CATCHUP_RANGE))
             AutoLoot(player, target);
     }
 };

@@ -39,6 +39,18 @@ are substantial enough to stand on their own).
   companion pet (1000g, sold by a "Special Vendor" NPC in every capital city)
   that auto-loots the owner's kills while summoned. See
   `Madosa.AutoLootPet.Enable` under "Live-tunable settings" below.
+
+  **Kills made at range count too**, which took a core hook to arrange. Looting
+  is gated on `INTERACTION_DISTANCE` (5.5 yards) in four places -
+  `Player::SendLoot()`, both loot opcode handlers and `DoLootRelease()` - so the
+  pet used to work only for things killed in melee, and a hunter or a caster
+  watched it do nothing. `PlayerScript::OnPlayerCanLootOutOfRange()` lets a
+  script say "this one, now"; the pet answers true for exactly the corpse it is
+  looting and everything else - permission, group rolls, master loot, the gold
+  split - runs the code it always did. `DoLootRelease()` is the gate worth
+  naming: it is where an emptied corpse loses `UNIT_DYNFLAG_LOOTABLE`, so
+  lifting the other three and not that one would leave empty corpses still
+  advertising loot.
 - **`class_trainer_pet.sql`**: "Classtrainer", a companion pet (2000g, sold by
   the same Special Vendor NPCs as Lootbot) that opens a real class-trainer
   window when talked to. There is only one pet/creature for every class - the
