@@ -1,0 +1,9 @@
+## Interface: 30300
+## Title: pfQuest Nameplates
+## Notes: Marks quest objective mobs on their nameplate - a mob icon to kill, a bag to loot
+## Author: madosa
+## Version: 1.0.0
+## OptionalDeps: pfQuest-wotlk, pfQuest, ElvUI
+## SavedVariables: pfQuestNameplatesDB
+
+Core.lua

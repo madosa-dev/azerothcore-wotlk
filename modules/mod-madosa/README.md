@@ -483,6 +483,36 @@ are substantial enough to stand on their own).
     Round-tripped through the server's own formula, all 124 land within 0.35
     yards of their real world position.
 
+- **`addon/pfQuestNameplates`**: a quest objective icon over the nameplate of
+  every mob that is one - a mob icon on something to kill, a bag on something to
+  loot, after the way Ascension marked them. Questie ships this and pfQuest does
+  not, so it is the piece that goes missing when you move from one to the other.
+
+  - **The two kinds come from pfQuest, not from the quest log.** The log's text
+    says what is left ("Kobold Vermin slain: 3/8") but never which mob drops the
+    item an objective asks for - which is exactly the case the bag is for.
+    pfQuest already resolves that: it tags every map node it creates with a
+    `QTYPE`, so `UNIT_OBJECTIVE` becomes the mob icon while `ITEM_OBJECTIVE_LOOT`,
+    `ITEM_OBJECTIVE_USE` and `UNIT_OBJECTIVE_ITEMREQ` become the bag. A mob that
+    is both shows the bag: you were going to kill it either way, and looting is
+    the half that gets forgotten.
+  - **The index is read out of `pfMap.nodes`, never accumulated.** pfQuest drops
+    a finished quest with `DeleteNode("PFQUEST", <title>)`, one quest at a time,
+    and a table filled by watching `AddNode` cannot act on that - it would keep
+    marking mobs for quests already handed in. Hooks on both calls only raise a
+    flag; the whole index is rebuilt from the nodes that currently exist, once
+    per frame however many changed.
+  - **Two kinds of nameplate.** With ElvUI's nameplate module on - the default -
+    ElvUI hides Blizzard's plate and draws its own, so the icon attaches to
+    `NP.VisiblePlates` and reads the name from `.UnitName`. Without it there is
+    no nameplate API on 3.3.5 at all, and the fallback recognises plates by the
+    one border texture they share and reads the name out of a fixed region slot -
+    the same recognition ElvUI itself uses, so the two agree on what a plate is.
+  - Art is pfQuest's own `cluster_mob` / `cluster_item`, so a nameplate icon is
+    the same picture as that objective's marker on the map. `/pfnp` toggles,
+    `/pfnp size|x|y <n>` places it, `/pfnp mono` switches to the monochrome set,
+    `/pfnp status` says how many mobs are objectives and which nameplates it found.
+
 - **`hardcore_pvp.sql` + `src/mod_madosa_hardcore_pvp.cpp` +
   `src/mod_madosa_hardcore_pvp_loot.cpp`**: **Hardcore PvP**, after Ascension
   WoW's mode of the same name. Opt in and you earn 10% more experience, ordinary
