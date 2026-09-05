@@ -668,7 +668,13 @@ end
 local function UpdateTowns()
     townPinsUsed, townsOnMap = 0, 0
 
-    if not db.towns or not WorldMapFrame:IsShown() then
+    -- ns.towns is missing when Towns.lua was added to the .toc but the client
+    -- has not been restarted: /reload re-runs the files loaded at startup, it
+    -- does not re-read the file list, so Core.lua comes back without it. Draw
+    -- nothing rather than throwing - and the same guard covers a Towns.lua that
+    -- failed to load for any other reason, which should cost the town layer and
+    -- not the whole map.
+    if not db.towns or not ns.towns or not WorldMapFrame:IsShown() then
         HideFrom(townPins, 1)
         return
     end
@@ -842,12 +848,17 @@ local function BuildMenu(_, level)
     UIDropDownMenu_AddButton(info, level)
 
     local towns = UIDropDownMenu_CreateInfo()
-    towns.text = (townsOnMap > 0)
-        and string.format("Towns and cities (%d here)", townsOnMap)
-        or "Towns and cities"
-    towns.checked = db.towns
-    towns.keepShownOnClick = true
-    towns.func = Toggle("towns")
+    if not ns.towns then
+        towns.text = "Towns and cities - restart the client"
+        towns.notCheckable, towns.disabled = true, true
+    else
+        towns.text = (townsOnMap > 0)
+            and string.format("Towns and cities (%d here)", townsOnMap)
+            or "Towns and cities"
+        towns.checked = db.towns
+        towns.keepShownOnClick = true
+        towns.func = Toggle("towns")
+    end
     UIDropDownMenu_AddButton(towns, level)
 
     info = UIDropDownMenu_CreateInfo()
@@ -1017,6 +1028,13 @@ SlashCmdList["WORLDFORGEDATLAS"] = function(input)
     end
 
     if input == "towns" then
+        if not ns.towns then
+            DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WorldforgedAtlas|r: no town list loaded. " ..
+                "Towns.lua is new in the .toc, and the client only reads that list at startup - " ..
+                "restart it once; /reload will not pick the file up.")
+            return
+        end
+
         db.towns = not db.towns
         Refresh()
         DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WorldforgedAtlas|r: towns and cities " ..
