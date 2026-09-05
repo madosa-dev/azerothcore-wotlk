@@ -1,10 +1,11 @@
 ## Interface: 30300
 ## Title: WorldforgedAtlas
-## Notes: Shows every Ascension Worldforged find location on the world map and minimap
+## Notes: Every Ascension Worldforged find on the world map and minimap, plus towns and cities as teleport targets
 ## Author: madosa
-## Version: 1.0.0
+## Version: 1.1.0
 ## OptionalDeps: !Astrolabe, Mapster
 ## SavedVariablesPerCharacter: WorldforgedAtlasDB
 
 Data.lua
+Towns.lua
 Core.lua

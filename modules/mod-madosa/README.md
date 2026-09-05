@@ -451,6 +451,38 @@ are substantial enough to stand on their own).
     pin opens the same menu. `/wfa` toggles the pins, `/wfa sync` re-asks the
     server.
 
+  **`Towns.lua` + `tools/towns/build_towns_addon.py`**: a second, unrelated
+  layer on the same map - **every town and city as a teleport target**, after the
+  Necro-Network in the MultiBot addon, which does the same for graveyards. Turn
+  it on under *Travel* in the menu or with `/wfa towns`, then left-click a place
+  to go there. Off by default, because the teleport is GameMaster-only.
+
+  - **124 settlements, from the client's own `AreaPOI.dbc`** - the list the world
+    map draws its named places from, so the pins are exactly the places the map
+    already labels rather than a hand-kept list that drifts. `Importance 3` picks
+    them out: 8 capitals, 96 towns, 20 villages. The other 232 rows are camps,
+    towers and single buildings, and are left out; 356 pins is the wall of icons
+    the continent view already had to be rescued from once. Each pin wears the
+    cell of `POIIcons` the map itself uses for that rank.
+  - **A place is put on the map its own `AreaID` names**, walked up AreaTable's
+    parent chain to the first area that has a map. Geometry is only the fallback,
+    for the three rows whose `AreaID` is unset (Dolanaar, Camp Winterhoof) or
+    simply wrong (Camp Mojache claims Mulgore while standing in Feralas) - on its
+    own it misplaces anything near a border, because zone boxes overlap: it puts
+    Astranaar in Stonetalon Mountains and drops the capitals onto the edge of
+    their own city maps, where `AreaID` correctly has Stormwind drawn on Elwynn
+    Forest and Orgrimmar on Durotar.
+  - **There is no `.go town`.** Necro-Network can send `.go graveyard <id>` and
+    let the server look the position up; a town has no id, so the pin carries its
+    own and sends `.go zonexy <across> <down> <areaId>` - the same two fractions
+    it is drawn at. The server converts them back through the identical
+    `WorldMapArea` bounds (`Zone2MapCoordinates`) and snaps Z to the ground with
+    `GetHeight()`. So no height is ever shipped or guessed - which matters,
+    because a POI's own Z is a marker altitude, not the floor to land on - and
+    the pin and the teleport cannot drift apart, being the same two numbers.
+    Round-tripped through the server's own formula, all 124 land within 0.35
+    yards of their real world position.
+
 - **`hardcore_pvp.sql` + `src/mod_madosa_hardcore_pvp.cpp` +
   `src/mod_madosa_hardcore_pvp_loot.cpp`**: **Hardcore PvP**, after Ascension
   WoW's mode of the same name. Opt in and you earn 10% more experience, ordinary

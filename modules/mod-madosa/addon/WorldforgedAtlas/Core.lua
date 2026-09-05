@@ -81,6 +81,16 @@ local TOOLTIP_ITEMS = 12
 -- hence re-asking on every refresh until it answers.
 local FALLBACK_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 
+-- Towns are a second, unrelated layer sharing this map: 124 settlements from
+-- AreaPOI.dbc, each a teleport. See the Towns section below.
+local TOWN_PIN_SIZE = 16
+local TOWN_ICON = "Interface\\Minimap\\POIIcons"
+local TOWN_FALLBACK_ICON = "Interface\\Icons\\INV_Misc_Map_01"
+
+-- The cell of POIIcons the world map itself draws each rank with, so a pin is
+-- the same picture the map already puts next to the name.
+local TOWN_CELL = { 6, 5, 7 }
+
 local Astrolabe = DongleStub and DongleStub("Astrolabe-0.4")
 
 WorldforgedAtlasDB = WorldforgedAtlasDB or {}
@@ -98,6 +108,9 @@ local defaults = {
     continentPins = false,
     minQuality = 0,      -- 0 shows everything; 4 shows epics only
     claimed = {},        -- item id -> true, as the server last reported it
+    -- Off by default: the teleport behind a town pin needs GameMaster rights,
+    -- so for most characters the layer would only be in the way.
+    towns = false,
 }
 
 local function ApplyDefaults()
@@ -564,8 +577,163 @@ local function UpdateMinimap()
     ReleaseMinimapPins(minimapPinsUsed + 1)
 end
 
+----------------------------------------------------------------------------
+-- Towns
+----------------------------------------------------------------------------
+
+-- MultiBot's Necro-Network puts a clickable button on every graveyard and
+-- teleports with `.go graveyard <id>`; this is the same idea for the places
+-- people actually travel to. There is no `.go town`, so the pin carries the
+-- position itself and sends `.go zonexy <across> <down> <areaId>` - the same
+-- zone fractions it is drawn at, converted back by the server through the
+-- identical WorldMapArea bounds and then dropped onto the ground with
+-- GetHeight(). Nothing about the destination is guessed here, and the pin and
+-- the teleport cannot drift apart because they are the same two numbers.
+--
+-- `.go` is GameMaster-only. A character without the right gets the server's own
+-- refusal in chat, which is a clearer answer than a hidden pin would be, so the
+-- layer is offered to everyone and simply defaults to off.
+
+local townPins, townPinsUsed = {}, 0
+local townsOnMap = 0
+
+local function TownTooltip(pin)
+    GameTooltip:SetOwner(pin, "ANCHOR_RIGHT")
+    GameTooltip:AddLine(pin.townName, 1, 1, 1)
+    GameTooltip:AddLine(ns.townRanks[pin.townRank] or "", 0.7, 0.7, 0.7)
+    GameTooltip:AddLine(" ")
+    GameTooltip:AddLine("Left-click to teleport here", 0.1, 1, 0.1)
+    GameTooltip:AddLine("Needs GameMaster rights", 0.5, 0.5, 0.5)
+    GameTooltip:Show()
+end
+
+local function TownClick(pin, button)
+    if button == "RightButton" then
+        OpenMenu(pin)
+        return
+    end
+
+    -- Two decimals is about a yard on a zone map, and the server clamps the
+    -- pair to 0..100 anyway.
+    SendChatMessage(string.format(".go zonexy %.2f %.2f %d",
+        pin.townAcross * 100, pin.townDown * 100, pin.townArea))
+end
+
+local function AcquireTownPin(parent)
+    townPinsUsed = townPinsUsed + 1
+
+    local pin = townPins[townPinsUsed]
+    if not pin then
+        pin = CreateFrame("Button", nil, parent)
+        pin:SetWidth(TOWN_PIN_SIZE)
+        pin:SetHeight(TOWN_PIN_SIZE)
+        pin:EnableMouse(true)
+        pin:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+
+        local icon = pin:CreateTexture(nil, "ARTWORK")
+        icon:SetAllPoints(pin)
+        pin.icon = icon
+
+        pin:SetScript("OnEnter", TownTooltip)
+        pin:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        pin:SetScript("OnClick", TownClick)
+
+        townPins[townPinsUsed] = pin
+    end
+
+    pin:SetParent(parent)
+    return pin
+end
+
+-- POIIcons is the sheet the world map's own landmarks are cut from, and the
+-- client hands out the cell coordinates. Should that ever not be there, a plain
+-- icon is a better pin than an untextured square.
+local function DressTownPin(pin, index, area, across, down)
+    local info = ns.townInfo[index]
+    pin.townName, pin.townRank = info[1], info[2]
+    pin.townArea, pin.townAcross, pin.townDown = area, across, down
+
+    local cell = TOWN_CELL[info[2]]
+    if cell and WorldMap_GetPOITextureCoords then
+        pin.icon:SetTexture(TOWN_ICON)
+        pin.icon:SetTexCoord(WorldMap_GetPOITextureCoords(cell))
+    else
+        pin.icon:SetTexture(TOWN_FALLBACK_ICON)
+        pin.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    end
+
+    pin:Show()
+end
+
+local function UpdateTowns()
+    townPinsUsed, townsOnMap = 0, 0
+
+    if not db.towns or not WorldMapFrame:IsShown() then
+        HideFrom(townPins, 1)
+        return
+    end
+
+    local continent, zone = GetCurrentMapContinent(), GetCurrentMapZone()
+    local texture = GetMapInfo()
+    local onZoneMap = (zone and zone > 0)
+
+    -- Cosmic and Azeroth, as for the finds: every town in the world on one
+    -- screen is not a map any more.
+    if not continent or continent < 1 then
+        HideFrom(townPins, 1)
+        return
+    end
+
+    local width, height = WorldMapDetailFrame:GetWidth(), WorldMapDetailFrame:GetHeight()
+    if not width or width <= 0 then return end
+
+    local parent = PinParent()
+    -- Above the find pins: a town is one click and a journey, a find is a note
+    -- to self, so the town should win an overlap.
+    local level = parent:GetFrameLevel() + 6
+
+    for _, entry in ipairs(ns.towns) do
+        local index = zoneIndex[entry.zone]
+        local here = onZoneMap and entry.texture == texture
+
+        -- A continent shows its zones' towns individually rather than clustered:
+        -- 124 of them over four continents is around thirty per screen, which is
+        -- the whole point of a travel map and nothing like the wall of find pins.
+        if here or (index and index.c == continent and not onZoneMap) then
+            local points = entry.points
+            for i = 1, #points, 3 do
+                local across, down, townIndex = points[i], points[i + 1], points[i + 2]
+                local nx, ny = across, down
+
+                if not here then
+                    if Astrolabe and index then
+                        nx, ny = Astrolabe:TranslateWorldMapPosition(index.c, index.z,
+                            across, down, continent, zone)
+                    else
+                        nx = nil  -- a zone fraction means nothing on a continent
+                    end
+                end
+
+                if nx and ny and nx > 0 and nx <= 1 and ny > 0 and ny <= 1 then
+                    local pin = AcquireTownPin(parent)
+                    pin:SetFrameLevel(level)
+                    pin:ClearAllPoints()
+                    pin:SetPoint("CENTER", WorldMapDetailFrame, "TOPLEFT", nx * width, -ny * height)
+                    -- The teleport always uses the town's own zone fractions,
+                    -- never the translated ones it happens to be drawn at.
+                    DressTownPin(pin, townIndex, entry.area, across, down)
+                end
+            end
+        end
+    end
+
+    townsOnMap = townPinsUsed
+    HideFrom(townPins, townPinsUsed + 1)
+end
+
 local function Refresh()
     UpdateWorldMap()
+    UpdateTowns()
     UpdateMinimap()
 end
 
@@ -670,6 +838,20 @@ local function BuildMenu(_, level)
 
     info = UIDropDownMenu_CreateInfo()
     info.isTitle, info.notCheckable = true, true
+    info.text = "Travel"
+    UIDropDownMenu_AddButton(info, level)
+
+    local towns = UIDropDownMenu_CreateInfo()
+    towns.text = (townsOnMap > 0)
+        and string.format("Towns and cities (%d here)", townsOnMap)
+        or "Towns and cities"
+    towns.checked = db.towns
+    towns.keepShownOnClick = true
+    towns.func = Toggle("towns")
+    UIDropDownMenu_AddButton(towns, level)
+
+    info = UIDropDownMenu_CreateInfo()
+    info.isTitle, info.notCheckable = true, true
     info.text = "Quality"
     UIDropDownMenu_AddButton(info, level)
 
@@ -699,6 +881,7 @@ function OpenMenu(anchor)
 
     -- Refresh first so the counts in the menu describe the map as it is now.
     UpdateWorldMap()
+    UpdateTowns()
     ToggleDropDownMenu(1, nil, menuFrame, anchor and "cursor" or "cursor", 0, 0)
 end
 
@@ -773,6 +956,7 @@ frame:SetScript("OnUpdate", function()
     if pending then
         pending = false
         UpdateWorldMap()
+        UpdateTowns()
     end
 end)
 
@@ -829,6 +1013,15 @@ SlashCmdList["WORLDFORGEDATLAS"] = function(input)
 
     if input == "menu" then
         OpenMenu()
+        return
+    end
+
+    if input == "towns" then
+        db.towns = not db.towns
+        Refresh()
+        DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WorldforgedAtlas|r: towns and cities " ..
+            (db.towns and "shown - left-click one to teleport (needs GameMaster rights)."
+                       or "hidden."))
         return
     end
 
