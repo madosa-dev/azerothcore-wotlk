@@ -1,0 +1,10 @@
+## Interface: 30300
+## Title: Talent Advisor
+## Notes: Says where the next talent point goes and which bag item beats what you wear, for a levelling build
+## Author: madosa
+## Version: 1.0.0
+## SavedVariables: TalentAdvisorDB
+## SavedVariablesPerCharacter: TalentAdvisorCharDB
+
+Builds.lua
+Core.lua

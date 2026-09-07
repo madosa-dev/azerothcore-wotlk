@@ -513,6 +513,36 @@ are substantial enough to stand on their own).
     `/pfnp size|x|y <n>` places it, `/pfnp mono` switches to the monochrome set,
     `/pfnp status` says how many mobs are objectives and which nameplates it found.
 
+- **`addon/TalentAdvisor`**: says where the next talent point goes and which
+  item in the bags beats what is worn, for one levelling build per class
+  (`Builds.lua`; shipped: Shaman Enhancement, levels 10-80). The frame shows
+  the next pick with a **Learn** button - `LearnTalent()` is not protected on
+  3.3.5 - the three picks after it, and the bag items worth equipping, each a
+  click away. `tools/talentadvisor/run_tests.lua` plays every build through
+  the real trees under `lua5.1`.
+
+  - **A build is positions, not names.** Each step is `{tab, tier, column,
+    points}` as `GetTalentInfo()` reports them, so the plan is independent of
+    client language and a talent can be revisited (Improved Shields gets two
+    points at 23 and its third at 34). The names shown are read from the game.
+  - **The next point is found by walking, not by counting levels.** Plan and
+    actual ranks are walked together and the first step the character is short
+    on is the pick. A point spent elsewhere, a respec or a point saved for a few
+    levels all leave the walk pointing at the right place; whatever sits outside
+    the plan is listed as *off plan* instead of being counted. Tier gates are
+    simulated over the queue, so several saved points are gated as a whole.
+  - **Gear is scored with the build's stat weights** (AP = 1) from
+    `GetItemStats()`, with the tooltip as fallback and for weapon speed. One red
+    tooltip line means the item cannot be worn now - level, class, skill or
+    faction, all colour that way - which is exact and locale-proof. Weapons are
+    compared as a set: a two-hander against both hands together, a one-hander
+    as main hand with the current off hand or, once the build's dual-wield
+    talent is known, as off hand next to the current main hand. Rings and
+    trinkets replace the weaker slot. Nothing is suggested below a 3% margin.
+  - `/ta` toggles the frame; `/ta learn`, `/ta auto on` (place the point on
+    level up), `/ta plan` (the rest of the plan by level), `/ta gear`,
+    `/ta build <name>`, `/ta margin <pct>`, `/ta weights`, `/ta notes`.
+
 - **`hardcore_pvp.sql` + `src/mod_madosa_hardcore_pvp.cpp` +
   `src/mod_madosa_hardcore_pvp_loot.cpp`**: **Hardcore PvP**, after Ascension
   WoW's mode of the same name. Opt in and you earn 10% more experience, ordinary
