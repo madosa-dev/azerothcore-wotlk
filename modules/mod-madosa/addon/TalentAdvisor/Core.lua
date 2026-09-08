@@ -1,5 +1,13 @@
 -- TalentAdvisor: where the next talent point goes, and which item in the bags
--- beats what is worn, for one levelling build per class (Builds.lua).
+-- beats what is worn, for the levelling build the player picked (Builds.lua).
+--
+-- Picking
+-- -------
+-- A class has several builds and they want different things from an item, so
+-- the first thing a character sees is the picker: the builds grouped by what
+-- they are for - melee, caster, healing, tanking - with the off-beat ones
+-- (shaman tank, shockadin) marked as such. Nothing is advised until one is
+-- chosen; the choice is per character and /ta pick changes it.
 --
 -- Talents
 -- -------
@@ -31,11 +39,19 @@
 --
 -- Weapons are compared as a set. A two-hander is weighed against main hand
 -- plus off hand together; a one-hander is tried as the main hand with the
--- current off hand, and - once the build's dual-wield talent is known - as
--- the off hand next to the current main hand, and the better of the two
--- placements counts. Rings and trinkets replace the weaker of their two
--- slots. Nothing is suggested unless it beats the worn piece by a margin
--- (default 3%), so re-scans do not flip between near-equal items.
+-- current off hand, and - when the build may pair two of them - as the off
+-- hand next to the current main hand, and the better of the two placements
+-- counts. A build that fights with a shield is never offered a two-hander at
+-- all. Rings and trinkets replace the weaker of their two slots. Nothing is
+-- suggested unless it beats the worn piece by a margin (default 3%), so
+-- re-scans do not flip between near-equal items.
+--
+-- Two things keep the score honest across roles. A rating that names a school
+-- ("+8 spell critical strike rating") only counts for a build of that school,
+-- so a melee plan does not chase spell haste. And an armour piece, however
+-- well it scores, is refused if its armour is below the build's fraction of
+-- what is already worn there - which is what stops a healer in plate being
+-- sent to a cloth robe with more Intellect on it.
 --
 -- Everything pure - plan expansion, the walk, scoring, set comparison - is
 -- on the TalentAdvisor table and takes plain data, so tools/talentadvisor/
@@ -158,18 +174,31 @@ end
 -- Items: reading
 ----------------------------------------------------------------------------
 
--- GetItemStats() keys -> the stat names the weights use.
+-- GetItemStats() keys -> the stat names the weights use. A key whose name
+-- carries a school ("CRIT_spell") is only counted for a build of that school;
+-- TA.Score does that split, which is why they are stored apart from the plain
+-- "CRIT" that any build takes.
 local STAT_KEYS = {
     ITEM_MOD_STRENGTH_SHORT = "STR", ITEM_MOD_AGILITY_SHORT = "AGI",
     ITEM_MOD_STAMINA_SHORT = "STA", ITEM_MOD_INTELLECT_SHORT = "INT",
     ITEM_MOD_SPIRIT_SHORT = "SPI", ITEM_MOD_ATTACK_POWER_SHORT = "AP",
-    ITEM_MOD_CRIT_RATING_SHORT = "CRIT", ITEM_MOD_CRIT_MELEE_RATING_SHORT = "CRIT",
-    ITEM_MOD_HIT_RATING_SHORT = "HIT", ITEM_MOD_HIT_MELEE_RATING_SHORT = "HIT",
-    ITEM_MOD_HASTE_RATING_SHORT = "HASTE", ITEM_MOD_HASTE_MELEE_RATING_SHORT = "HASTE",
+    ITEM_MOD_CRIT_RATING_SHORT = "CRIT", ITEM_MOD_HIT_RATING_SHORT = "HIT",
+    ITEM_MOD_HASTE_RATING_SHORT = "HASTE",
+    ITEM_MOD_CRIT_MELEE_RATING_SHORT = "CRIT_melee",
+    ITEM_MOD_HIT_MELEE_RATING_SHORT = "HIT_melee",
+    ITEM_MOD_HASTE_MELEE_RATING_SHORT = "HASTE_melee",
+    ITEM_MOD_CRIT_SPELL_RATING_SHORT = "CRIT_spell",
+    ITEM_MOD_HIT_SPELL_RATING_SHORT = "HIT_spell",
+    ITEM_MOD_HASTE_SPELL_RATING_SHORT = "HASTE_spell",
     ITEM_MOD_EXPERTISE_RATING_SHORT = "EXP",
     ITEM_MOD_ARMOR_PENETRATION_RATING_SHORT = "ARP",
     ITEM_MOD_SPELL_POWER_SHORT = "SP", ITEM_MOD_MANA_REGENERATION_SHORT = "MP5",
-    ITEM_MOD_BLOCK_VALUE_SHORT = "BLOCK", ITEM_MOD_DAMAGE_PER_SECOND_SHORT = "DPS",
+    ITEM_MOD_HEALTH_REGENERATION_SHORT = "HP5",
+    ITEM_MOD_DEFENSE_SKILL_RATING_SHORT = "DEF",
+    ITEM_MOD_DODGE_RATING_SHORT = "DODGE", ITEM_MOD_PARRY_RATING_SHORT = "PARRY",
+    ITEM_MOD_BLOCK_RATING_SHORT = "BLOCKR", ITEM_MOD_BLOCK_VALUE_SHORT = "BLOCK",
+    ITEM_MOD_RESILIENCE_RATING_SHORT = "RESIL",
+    ITEM_MOD_DAMAGE_PER_SECOND_SHORT = "DPS",
     RESISTANCE0_NAME = "ARMOR",
 }
 TA.STAT_KEYS = STAT_KEYS
@@ -186,11 +215,18 @@ local function BuildLinePatterns()
         return (fmt:gsub("\1", "(%%d+)"))
     end
     local long = {
-        ITEM_MOD_ATTACK_POWER = "AP", ITEM_MOD_CRIT_RATING = "CRIT", ITEM_MOD_CRIT_MELEE_RATING = "CRIT",
-        ITEM_MOD_HIT_RATING = "HIT", ITEM_MOD_HIT_MELEE_RATING = "HIT", ITEM_MOD_HASTE_RATING = "HASTE",
-        ITEM_MOD_HASTE_MELEE_RATING = "HASTE", ITEM_MOD_EXPERTISE_RATING = "EXP",
+        ITEM_MOD_ATTACK_POWER = "AP", ITEM_MOD_CRIT_RATING = "CRIT",
+        ITEM_MOD_HIT_RATING = "HIT", ITEM_MOD_HASTE_RATING = "HASTE",
+        ITEM_MOD_CRIT_MELEE_RATING = "CRIT_melee", ITEM_MOD_HIT_MELEE_RATING = "HIT_melee",
+        ITEM_MOD_HASTE_MELEE_RATING = "HASTE_melee",
+        ITEM_MOD_CRIT_SPELL_RATING = "CRIT_spell", ITEM_MOD_HIT_SPELL_RATING = "HIT_spell",
+        ITEM_MOD_HASTE_SPELL_RATING = "HASTE_spell",
+        ITEM_MOD_EXPERTISE_RATING = "EXP",
         ITEM_MOD_ARMOR_PENETRATION_RATING = "ARP", ITEM_MOD_SPELL_POWER = "SP",
-        ITEM_MOD_MANA_REGENERATION = "MP5", ITEM_MOD_BLOCK_VALUE = "BLOCK",
+        ITEM_MOD_MANA_REGENERATION = "MP5", ITEM_MOD_HEALTH_REGENERATION = "HP5",
+        ITEM_MOD_DEFENSE_SKILL_RATING = "DEF", ITEM_MOD_DODGE_RATING = "DODGE",
+        ITEM_MOD_PARRY_RATING = "PARRY", ITEM_MOD_BLOCK_RATING = "BLOCKR",
+        ITEM_MOD_BLOCK_VALUE = "BLOCK", ITEM_MOD_RESILIENCE_RATING = "RESIL",
     }
     for global, stat in pairs(long) do
         local fmt = _G[global]
@@ -289,12 +325,21 @@ end
 -- Items: scoring (pure)
 ----------------------------------------------------------------------------
 
--- hand: "MH", "OH", "2H" or nil for armour.
-function TA.Score(item, weights, hand)
+-- hand: "MH", "OH", "2H" or nil for armour. school: the build's "melee" or
+-- "spell" - a stat that names a school ("CRIT_spell") counts only for a build
+-- of that school and is worth nothing to any other.
+function TA.Score(item, weights, hand, school)
     if not item then return 0 end
     local s = 0
     for stat, v in pairs(item.stats) do
-        if stat ~= "DPS" then s = s + (weights[stat] or 0) * v end
+        if stat ~= "DPS" then
+            local base, only = stat:match("^(%u[%u%d]*)_(%l+)$")
+            if base then
+                if only == school then s = s + (weights[base] or 0) * v end
+            else
+                s = s + (weights[stat] or 0) * v
+            end
+        end
     end
     if hand and item.stats.DPS then
         s = s + item.stats.DPS * (weights["DPS_" .. hand] or 0)
@@ -313,6 +358,27 @@ local ARMOUR_SLOTS = {
 }
 TA.ARMOUR_SLOTS = ARMOUR_SLOTS
 
+-- The slots where armour class is a real choice - the ones a plate wearer can
+-- fill with cloth if nothing stops them. Necks, rings, trinkets and cloaks
+-- carry no meaningful armour and are left out.
+local ARMOUR_CLASS_SLOTS = {
+    INVTYPE_HEAD = true, INVTYPE_SHOULDER = true, INVTYPE_CHEST = true,
+    INVTYPE_ROBE = true, INVTYPE_WAIST = true, INVTYPE_LEGS = true,
+    INVTYPE_FEET = true, INVTYPE_WRIST = true, INVTYPE_HAND = true,
+}
+TA.ARMOUR_CLASS_SLOTS = ARMOUR_CLASS_SLOTS
+
+-- An armour piece that scores better but drops an armour class is a trap: it
+-- happens whenever a caster build meets cloth on a mail or plate wearer.
+-- Anything below the build's fraction of the armour already in that slot is
+-- refused, whatever it scores.
+local function ArmourDowngrade(item, worn, build)
+    if not build.armorFloor or not ARMOUR_CLASS_SLOTS[item.equipLoc] then return false end
+    local have = worn and worn.stats.ARMOR or 0
+    if have <= 0 then return false end
+    return (item.stats.ARMOR or 0) < have * build.armorFloor
+end
+
 local function IsTwoHand(item) return item and item.equipLoc == "INVTYPE_2HWEAPON" end
 local function IsOneHand(item)
     return item and (item.equipLoc == "INVTYPE_WEAPON" or item.equipLoc == "INVTYPE_WEAPONMAINHAND"
@@ -320,40 +386,46 @@ local function IsOneHand(item)
 end
 
 -- Score of the worn weapon set.
-local function WornWeaponScore(worn, weights)
+local function WornWeaponScore(worn, weights, school)
     local mh, oh = worn[16], worn[17]
-    if IsTwoHand(mh) then return TA.Score(mh, weights, "2H") end
-    local s = TA.Score(mh, weights, "MH")
-    if oh then s = s + TA.Score(oh, weights, IsOneHand(oh) and "OH" or nil) end
+    if IsTwoHand(mh) then return TA.Score(mh, weights, "2H", school) end
+    local s = TA.Score(mh, weights, "MH", school)
+    if oh then s = s + TA.Score(oh, weights, IsOneHand(oh) and "OH" or nil, school) end
     return s
 end
 
 -- Best placement of a weapon-slot candidate against what is worn.
 -- Returns candidateSetScore, wornSetScore, slot (16 or 17), or nil if it
--- cannot go anywhere.
-function TA.CompareWeapon(cand, worn, weights, canDualWield)
-    local wornScore = WornWeaponScore(worn, weights)
+-- cannot go anywhere - which is also the answer for a two-hander offered to a
+-- build that fights with a shield.
+function TA.CompareWeapon(cand, worn, build, canDualWield)
+    local weights, school = build.weights, build.school
+    local wornScore = WornWeaponScore(worn, weights, school)
     local mh, oh = worn[16], worn[17]
     local loc = cand.equipLoc
     local best, bestSlot
 
     if loc == "INVTYPE_2HWEAPON" then
-        best, bestSlot = TA.Score(cand, weights, "2H"), 16
+        if build.shield then return nil end
+        best, bestSlot = TA.Score(cand, weights, "2H", school), 16
     else
         -- as main hand, keeping the current off hand (which a 2H would have displaced)
         if loc == "INVTYPE_WEAPON" or loc == "INVTYPE_WEAPONMAINHAND" then
-            local s = TA.Score(cand, weights, "MH")
-            if oh and not IsTwoHand(mh) then s = s + TA.Score(oh, weights, IsOneHand(oh) and "OH" or nil) end
+            local s = TA.Score(cand, weights, "MH", school)
+            if oh and not IsTwoHand(mh) then
+                s = s + TA.Score(oh, weights, IsOneHand(oh) and "OH" or nil, school)
+            end
             best, bestSlot = s, 16
         end
         -- as off hand next to the current main hand
         local ohOK = (loc == "INVTYPE_WEAPON" or loc == "INVTYPE_WEAPONOFFHAND") and canDualWield
             or loc == "INVTYPE_SHIELD" or loc == "INVTYPE_HOLDABLE"
         if ohOK and mh and not IsTwoHand(mh) then
-            local s = TA.Score(mh, weights, "MH") + TA.Score(cand, weights, IsOneHand(cand) and "OH" or nil)
+            local s = TA.Score(mh, weights, "MH", school)
+                + TA.Score(cand, weights, IsOneHand(cand) and "OH" or nil, school)
             if not best or s > best then best, bestSlot = s, 17 end
         elseif ohOK and not mh then
-            local s = TA.Score(cand, weights, IsOneHand(cand) and "OH" or nil)
+            local s = TA.Score(cand, weights, IsOneHand(cand) and "OH" or nil, school)
             if not best or s > best then best, bestSlot = s, 17 end
         end
     end
@@ -363,8 +435,9 @@ end
 
 -- items: list of bag items ({ item = <ReadItem>, bag, slot }); worn: [invSlot] = item.
 -- Returns list of { item, bag, slot, invSlot, score, wornScore, wornItem, gain }
-function TA.FindUpgrades(items, worn, weights, canDualWield, margin)
+function TA.FindUpgrades(items, worn, build, canDualWield, margin)
     margin = margin or UPGRADE_MARGIN
+    local weights, school = build.weights, build.school
     local out = {}
     local wornIds = {}
     for _, w in pairs(worn) do if w then wornIds[w.id] = true end end
@@ -377,17 +450,17 @@ function TA.FindUpgrades(items, worn, weights, canDualWield, margin)
                 -- the weaker of the possible slots is the one to replace
                 local target, targetScore
                 for _, inv in ipairs(slots) do
-                    local s = TA.Score(worn[inv], weights)
+                    local s = TA.Score(worn[inv], weights, nil, school)
                     if not target or s < targetScore then target, targetScore = inv, s end
                 end
-                local s = TA.Score(it, weights)
-                if s > targetScore * margin + 0.5 then
+                local s = TA.Score(it, weights, nil, school)
+                if s > targetScore * margin + 0.5 and not ArmourDowngrade(it, worn[target], build) then
                     out[#out + 1] = { item = it, bag = entry.bag, slot = entry.slot, invSlot = target,
                         score = s, wornScore = targetScore, wornItem = worn[target], gain = s - targetScore }
                 end
             elseif it.equipLoc:find("^INVTYPE_") and (IsTwoHand(it) or IsOneHand(it)
                 or it.equipLoc == "INVTYPE_SHIELD" or it.equipLoc == "INVTYPE_HOLDABLE") then
-                local s, ws, inv = TA.CompareWeapon(it, worn, weights, canDualWield)
+                local s, ws, inv = TA.CompareWeapon(it, worn, build, canDualWield)
                 if s and s > ws * margin + 0.5 then
                     out[#out + 1] = { item = it, bag = entry.bag, slot = entry.slot, invSlot = inv,
                         score = s, wornScore = ws, wornItem = worn[inv], gain = s - ws, weaponSet = true }
@@ -425,12 +498,23 @@ local function CharDB()
     return TalentAdvisorCharDB
 end
 
+-- The roles a build can be for, in the order the picker lists them.
+local ROLES = { "melee", "caster", "heal", "tank" }
+local ROLE_LABEL = {
+    melee = "Melee damage", caster = "Caster damage",
+    heal = "Healing", tank = "Tanking",
+}
+TA.ROLES, TA.ROLE_LABEL = ROLES, ROLE_LABEL
+
+-- key = nil means "whatever this character chose". Returns false, "unchosen"
+-- when nothing has been chosen yet, which is what opens the picker.
 function TA.SelectBuild(key)
     local _, class = UnitClass("player")
     state.className = class
     local set = BUILDS[class]
     if not set then state.build, state.plan = nil, nil; return false, "no build for " .. tostring(class) end
-    key = key or CharDB().build or set.default
+    key = key or CharDB().build
+    if not key then state.build, state.plan = nil, nil; return false, "unchosen" end
     local build = set[key]
     if type(build) ~= "table" or not build.steps then return false, "unknown build '" .. tostring(key) .. "'" end
     CharDB().build = key
@@ -450,9 +534,38 @@ function TA.BuildKeys()
     return keys
 end
 
+-- The class's builds grouped by role, roles in ROLES order and the plain
+-- builds ahead of the meta ones inside each. Returns a list of
+-- { role = <role>, builds = { { key, build }, ... } }.
+function TA.BuildsByRole(class)
+    local set = BUILDS[class or state.className]
+    local out = {}
+    if not set then return out end
+    for _, role in ipairs(ROLES) do
+        local group = {}
+        for k, v in pairs(set) do
+            if type(v) == "table" and v.steps and v.role == role then
+                group[#group + 1] = { key = k, build = v }
+            end
+        end
+        table.sort(group, function(a, b)
+            if (a.build.meta or false) ~= (b.build.meta or false) then return not a.build.meta end
+            return a.key < b.key
+        end)
+        if #group > 0 then out[#out + 1] = { role = role, builds = group } end
+    end
+    return out
+end
+
+-- true when the build may put a one-hander in the off hand: always for a
+-- class that is born dual wielding, from a level for one that trains it, or
+-- once the named talent is taken.
 local function CanDualWield()
-    if not state.build or not state.build.dualWield or not state.talents then return false end
-    local d = state.build.dualWield
+    local d = state.build and state.build.dualWield
+    if not d then return false end
+    if d == true then return true end
+    if d.level then return (UnitLevel("player") or 0) >= d.level end
+    if not state.talents then return false end
     local t = state.talents.byKey[Key(d.tab, d.tier, d.col)]
     return t ~= nil and t.rank > 0
 end
@@ -488,7 +601,7 @@ function TA.RefreshGear()
         end
     end
     state.worn = worn
-    state.upgrades = TA.FindUpgrades(items, worn, state.build.weights, CanDualWield(), DB().margin)
+    state.upgrades = TA.FindUpgrades(items, worn, state.build, CanDualWield(), DB().margin)
     for _, u in ipairs(state.upgrades) do
         if not state.announced[u.item.id] then
             state.announced[u.item.id] = true
@@ -532,6 +645,155 @@ function TA.Equip(u)
     end
 end
 
+
+----------------------------------------------------------------------------
+-- Picker
+----------------------------------------------------------------------------
+
+-- The first thing a character sees. The builds are grouped by what they are
+-- for, because that is the question being asked - not "which tree" but "what
+-- do you want to do in a fight". Meta builds (a shaman that tanks, a paladin
+-- that casts) sit at the end of their group and say so, so nobody picks one
+-- by accident.
+
+local picker
+local PICKER_WIDTH = 460
+
+local function PickerRow(parent, index)
+    local row = CreateFrame("Button", nil, parent)
+    row:SetHeight(32)
+    row:SetPoint("LEFT", 12, 0); row:SetPoint("RIGHT", -12, 0)
+    row.bg = row:CreateTexture(nil, "BACKGROUND")
+    row.bg:SetAllPoints()
+    row.bg:SetTexture(1, 1, 1, 0.06)
+    row.bg:Hide()
+    row.name = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    row.name:SetPoint("TOPLEFT", 4, -2)
+    row.name:SetJustifyH("LEFT")
+    row.desc = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    row.desc:SetPoint("TOPLEFT", row.name, "BOTTOMLEFT", 0, -2)
+    row.desc:SetPoint("RIGHT", -4, 0)
+    row.desc:SetJustifyH("LEFT")
+    row.desc:SetTextColor(0.75, 0.75, 0.75)
+    row:SetScript("OnEnter", function(self) self.bg:Show() end)
+    row:SetScript("OnLeave", function(self) self.bg:Hide() end)
+    row:SetScript("OnClick", function(self)
+        if not self.buildKey then return end
+        local ok, why = TA.SelectBuild(self.buildKey)
+        if not ok then Print(why); return end
+        picker:Hide()
+        DB().shown = true
+        TA.RefreshTalents()
+        state.announced = {}
+        state.dirtyGear = true
+        TA.Render()
+        Print(string.format("%s it is. /ta notes for how it is meant to be played, /ta pick to change.",
+            state.build.name))
+    end)
+    parent.rows[index] = row
+    return row
+end
+
+local function BuildPickerFrame()
+    picker = CreateFrame("Frame", "TalentAdvisorPicker", UIParent)
+    picker:SetWidth(PICKER_WIDTH)
+    picker:SetPoint("CENTER")
+    picker:SetFrameStrata("DIALOG")
+    picker:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile = true, tileSize = 32, edgeSize = 32,
+        insets = { left = 11, right = 12, top = 12, bottom = 11 },
+    })
+    picker:EnableMouse(true); picker:SetMovable(true); picker:SetClampedToScreen(true)
+    picker:RegisterForDrag("LeftButton")
+    picker:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    picker:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+
+    picker.title = picker:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    picker.title:SetPoint("TOP", 0, -16)
+
+    picker.intro = picker:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    picker.intro:SetPoint("TOPLEFT", 16, -40)
+    picker.intro:SetPoint("RIGHT", -16, 0)
+    picker.intro:SetJustifyH("LEFT")
+    picker.intro:SetTextColor(0.8, 0.8, 0.8)
+
+    picker.close = CreateFrame("Button", nil, picker, "UIPanelCloseButton")
+    picker.close:SetPoint("TOPRIGHT", -6, -6)
+    picker.close:SetScript("OnClick", function() picker:Hide() end)
+
+    picker.headers, picker.rows = {}, {}
+    picker.foot = picker:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    picker.foot:SetPoint("BOTTOMLEFT", 16, 16)
+    picker.foot:SetPoint("RIGHT", -16, 0)
+    picker.foot:SetJustifyH("LEFT")
+    picker:Hide()
+end
+
+local function PickerHeader(index)
+    local h = picker.headers[index]
+    if not h then
+        h = picker:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        h:SetJustifyH("LEFT")
+        h:SetTextColor(1, 0.82, 0)
+        picker.headers[index] = h
+    end
+    return h
+end
+
+function TA.ShowPicker()
+    if not picker then BuildPickerFrame() end
+    local groups = TA.BuildsByRole()
+    for _, h in ipairs(picker.headers) do h:Hide() end
+    for _, r in ipairs(picker.rows) do r:Hide(); r.buildKey = nil end
+
+    local className = UnitClass("player") or "?"
+    local set = BUILDS[state.className]
+    local suggested = set and set.default
+    picker.title:SetText(className .. " - what do you want to play?")
+    picker.intro:SetText("The plan for the next 71 talent points, and which item in your bags "
+        .. "is an upgrade, both follow from this. You can change it at any time with /ta pick; "
+        .. "the game charges gold for the respec, the addon does not care.")
+
+    local anchor, y = nil, -(40 + picker.intro:GetStringHeight() + 12)
+    local hIndex, rIndex, height = 0, 0, 0
+    for _, group in ipairs(groups) do
+        hIndex = hIndex + 1
+        local h = PickerHeader(hIndex)
+        h:ClearAllPoints()
+        if anchor then h:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", -4, -10)
+        else h:SetPoint("TOPLEFT", 16, y) end
+        h:SetText(ROLE_LABEL[group.role] or group.role)
+        h:Show()
+        anchor = h
+        height = height + 22
+
+        for _, entry in ipairs(group.builds) do
+            rIndex = rIndex + 1
+            local row = picker.rows[rIndex] or PickerRow(picker, rIndex)
+            row:ClearAllPoints()
+            row:SetPoint("LEFT", 12, 0); row:SetPoint("RIGHT", -12, 0)
+            row:SetPoint("TOP", anchor, "BOTTOM", 0, -2)
+            row.buildKey = entry.key
+            local mark = entry.build.meta and " |cffff9900(meta)|r" or ""
+            if entry.key == suggested then mark = mark .. " |cff888888(usual pick)|r" end
+            local current = (state.buildKey == entry.key) and " |cff55ff55(current)|r" or ""
+            row.name:SetText(entry.build.name .. mark .. current)
+            row.desc:SetText(entry.build.desc or "")
+            row:Show()
+            anchor = row
+            height = height + 34
+        end
+    end
+
+    picker.foot:SetText("Meta builds work, but they are the odd way to play the class - "
+        .. "slower to kill things, better at surviving them.")
+    picker:SetHeight(40 + picker.intro:GetStringHeight() + 12 + height + 16
+        + picker.foot:GetStringHeight() + 16)
+    picker:Show()
+end
+
 ----------------------------------------------------------------------------
 -- Frame
 ----------------------------------------------------------------------------
@@ -559,6 +821,8 @@ local function BuildFrame()
 
     frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     frame.title:SetPoint("TOPLEFT", 10, -8)
+    frame.title:SetPoint("RIGHT", -30, 0)
+    frame.title:SetJustifyH("LEFT")
     frame.title:SetText("Talent Advisor")
 
     frame.close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
@@ -634,9 +898,15 @@ function TA.Render()
     if db.pos then frame:ClearAllPoints(); frame:SetPoint(db.pos[1], UIParent, db.pos[2], db.pos[3], db.pos[4]) end
 
     local a = state.analysis
+    if state.build then
+        frame.title:SetText(string.format("Talent Advisor - %s|cff888888  %s|r", state.build.name,
+            ROLE_LABEL[state.build.role] or ""))
+    else
+        frame.title:SetText("Talent Advisor")
+    end
     if not state.build then
         frame.icon:SetTexture(nil)
-        frame.next:SetText("No levelling build for this class.")
+        frame.next:SetText("No build chosen - /ta pick")
         frame.sub:SetText(""); frame.queue:SetText(""); frame.learn:Hide()
     elseif not a or #a.unknown > 0 then
         frame.next:SetText("Build does not match the talent trees.")
@@ -747,7 +1017,15 @@ events:SetScript("OnEvent", function(_, event, arg1)
     if event == "PLAYER_LOGIN" then
         BuildFrame()
         local ok, why = TA.SelectBuild()
-        if not ok then Print(why .. " - only gear and talent frames for classes in Builds.lua."); TA.Render(); return end
+        if not ok and why == "unchosen" then
+            TA.Render()
+            TA.ShowPicker()
+            return
+        elseif not ok then
+            Print(why .. " - no levelling build for this class yet.")
+            TA.Render()
+            return
+        end
         TA.RefreshTalents()
         state.dirtyGear = true
         TA.Render()
@@ -801,9 +1079,18 @@ SlashCmdList.TALENTADVISOR = function(msg)
         state.announced = {}
         TA.RefreshGear(); TA.Render()
         if #state.upgrades == 0 then Print("Nothing in the bags beats what you wear.") end
+    elseif cmd == "pick" then
+        TA.ShowPicker()
     elseif cmd == "build" then
         if arg == "" then
-            Print("Builds for this class: " .. table.concat(TA.BuildKeys(), ", ") .. " (current: " .. tostring(state.buildKey) .. ")")
+            Print("Current: " .. (state.build and state.build.name or "none") .. ". Choose with /ta pick, or:")
+            for _, group in ipairs(TA.BuildsByRole()) do
+                local names = {}
+                for _, e in ipairs(group.builds) do
+                    names[#names + 1] = e.key .. (e.build.meta and "*" or "")
+                end
+                Print(string.format("  %-14s %s", TA.ROLE_LABEL[group.role], table.concat(names, ", ")))
+            end
         else
             local ok, why = TA.SelectBuild(arg)
             if ok then TA.RefreshTalents(); state.dirtyGear = true; TA.Render(); Print("Build: " .. state.build.name)
@@ -824,6 +1111,7 @@ SlashCmdList.TALENTADVISOR = function(msg)
     elseif cmd == "reset" then
         db.pos = nil; db.shown = true; TA.Render()
     else
-        Print("/ta  toggle frame | show | hide | learn | auto on/off | plan | gear | build [name] | margin <pct> | weights | notes | reset")
+        Print("/ta  toggle frame | pick | show | hide | learn | auto on/off | plan | gear")
+        Print("     build [name] | margin <pct> | weights | notes | reset")
     end
 end

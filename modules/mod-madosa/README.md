@@ -514,13 +514,34 @@ are substantial enough to stand on their own).
     `/pfnp status` says how many mobs are objectives and which nameplates it found.
 
 - **`addon/TalentAdvisor`**: says where the next talent point goes and which
-  item in the bags beats what is worn, for one levelling build per class
-  (`Builds.lua`; shipped: Shaman Enhancement, levels 10-80). The frame shows
-  the next pick with a **Learn** button - `LearnTalent()` is not protected on
-  3.3.5 - the three picks after it, and the bag items worth equipping, each a
-  click away. `tools/talentadvisor/run_tests.lua` plays every build through
-  the real trees under `lua5.1`.
+  item in the bags beats what is worn, for the levelling build the character
+  picked. A new character is asked first - **what do you want to play?** - and
+  the builds are listed by that, not by tree: melee, caster, healing, tanking.
+  The frame then shows the next pick with a **Learn** button - `LearnTalent()`
+  is not protected on 3.3.5 - the three picks after it, and the bag items worth
+  equipping, each a click away.
 
+  Sixteen builds ship, four per class, levels 10-80:
+
+  | | melee | caster | heal | tank |
+  |---|---|---|---|---|
+  | **Shaman** | Enhancement | Elemental | Restoration | *Earthwarden* |
+  | **Warrior** | Arms, Fury, *Gladiator* | | | Protection |
+  | **Paladin** | Retribution | *Shockadin* | Holy | Protection |
+  | **Rogue** | Combat, Assassination, Subtlety | | | *Riposte* |
+
+  The four in italics are meta builds - a shaman that tanks with a shield, a
+  warrior that does damage with one, a paladin that casts Holy Shock, a rogue
+  that tanks on parry. They work, they are marked as the odd way to play the
+  class, and they get their own stat weights.
+
+  - **The builds are generated, not typed.** `tools/talentadvisor/dump_trees.py`
+    reads `Talent.dbc` and `gen_builds.py` resolves each build's talent *names*
+    against that tree, so the coordinates in `Builds.lua` cannot drift from the
+    client. Every plan is then played out point by point and refused unless it
+    holds: no talent past its rank cap, no tier before `5*(N-1)` points sit in
+    that tree, no talent before its prerequisite is full, exactly 71 points.
+    `run_tests.lua` repeats all of that under `lua5.1`, against the same trees.
   - **A build is positions, not names.** Each step is `{tab, tier, column,
     points}` as `GetTalentInfo()` reports them, so the plan is independent of
     client language and a talent can be revisited (Improved Shields gets two
@@ -531,17 +552,27 @@ are substantial enough to stand on their own).
     levels all leave the walk pointing at the right place; whatever sits outside
     the plan is listed as *off plan* instead of being counted. Tier gates are
     simulated over the queue, so several saved points are gated as a whole.
-  - **Gear is scored with the build's stat weights** (AP = 1) from
-    `GetItemStats()`, with the tooltip as fallback and for weapon speed. One red
-    tooltip line means the item cannot be worn now - level, class, skill or
-    faction, all colour that way - which is exact and locale-proof. Weapons are
-    compared as a set: a two-hander against both hands together, a one-hander
-    as main hand with the current off hand or, once the build's dual-wield
-    talent is known, as off hand next to the current main hand. Rings and
-    trinkets replace the weaker slot. Nothing is suggested below a 3% margin.
-  - `/ta` toggles the frame; `/ta learn`, `/ta auto on` (place the point on
-    level up), `/ta plan` (the rest of the plan by level), `/ta gear`,
-    `/ta build <name>`, `/ta margin <pct>`, `/ta weights`, `/ta notes`.
+  - **Gear is scored with the build's stat weights** (attack power 1 in the
+    physical builds, spell power 1 in the casting ones) from `GetItemStats()`,
+    with the tooltip as fallback and for weapon speed. One red tooltip line
+    means the item cannot be worn now - level, class, skill or faction, all
+    colour that way - which is exact and locale-proof.
+  - **Three rules keep the advice inside the role.** A rating that names a
+    school - "+8 spell critical strike rating" - counts only for a build of that
+    school. An armour piece is refused if its armour falls below the build's
+    fraction of what is worn there, which is what stops a healer in plate being
+    sent to a cloth robe with more Intellect. And a build that fights with a
+    shield is never offered a two-hander at all.
+  - Weapons are compared as a set: a two-hander against both hands together, a
+    one-hander as main hand with the current off hand or, when the build may
+    pair two of them, as off hand next to the current main hand. Dual wield is
+    per build - always for a rogue, from level 20 for a Fury warrior, from the
+    talent for an Enhancement shaman, never for the rest. Rings and trinkets
+    replace the weaker slot. Nothing is suggested below a 3% margin.
+  - `/ta` toggles the frame; `/ta pick` reopens the chooser, `/ta learn`,
+    `/ta auto on` (place the point on level up), `/ta plan` (the rest of the
+    plan by level), `/ta gear`, `/ta build <name>`, `/ta margin <pct>`,
+    `/ta weights`, `/ta notes`.
 
 - **`hardcore_pvp.sql` + `src/mod_madosa_hardcore_pvp.cpp` +
   `src/mod_madosa_hardcore_pvp_loot.cpp`**: **Hardcore PvP**, after Ascension
