@@ -205,7 +205,7 @@ TalentAdvisorBuilds = {
             },
         },
         shockadin = {
-            name = "Shockadin (holy caster)",
+            name = "Shockadin",
             role = "caster",
             school = "spell",
             desc = "Meta build: Holy Shock as a damage spell, in plate, with a shield. Odd and effective.",
@@ -421,7 +421,7 @@ TalentAdvisorBuilds = {
             },
         },
         riposte = {
-            name = "Riposte (tank)",
+            name = "Riposte",
             role = "tank",
             school = "melee",
             desc = "Meta build: parry, Riposte and Vitality in leather. Tanks five-mans nothing else will let a rogue tank.",
@@ -645,7 +645,7 @@ TalentAdvisorBuilds = {
             },
         },
         tank = {
-            name = "Earthwarden (tank)",
+            name = "Earthwarden",
             role = "tank",
             school = "melee",
             desc = "Meta build: shield, Toughness, Anticipation and Shamanistic Rage. Holds five-mans, not raids.",
@@ -867,7 +867,7 @@ TalentAdvisorBuilds = {
             },
         },
         gladiator = {
-            name = "Gladiator (shield DPS)",
+            name = "Gladiator",
             role = "melee",
             school = "melee",
             desc = "Meta build: damage with a shield up. Deep Wounds and Rend early, Sword and Board late.",

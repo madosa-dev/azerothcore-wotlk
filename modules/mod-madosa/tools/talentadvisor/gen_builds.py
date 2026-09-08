@@ -152,7 +152,7 @@ BUILDS = {
              (2, 'Improved Shields', 3), (2, 'Guardian Totems', 2), (2, 'Elemental Weapons', 2),
          ]),
 
-    dict(key='tank', name='Earthwarden (tank)', role='tank', school='melee', meta=True,
+    dict(key='tank', name='Earthwarden', role='tank', school='melee', meta=True,
          desc='Meta build: shield, Toughness, Anticipation and Shamanistic Rage. Holds five-mans, not raids.',
          dualWield=None, shield=True, armorFloor=0.6,
          weights=w(W_TANK, DEF=1.6, BLOCKR=0.3, BLOCK=0.2, INT=0.5, SP=0.3, MP5=0.3),
@@ -247,7 +247,7 @@ BUILDS = {
              (1, 'Tactical Mastery', 3), (1, 'Iron Will', 3),
          ]),
 
-    dict(key='gladiator', name='Gladiator (shield DPS)', role='melee', school='melee', meta=True,
+    dict(key='gladiator', name='Gladiator', role='melee', school='melee', meta=True,
          desc='Meta build: damage with a shield up. Deep Wounds and Rend early, Sword and Board late.',
          dualWield=None, shield=True, armorFloor=0.55,
          weights=w(W_MELEE_STR, STA=1.2, ARMOR=0.03, BLOCK=0.8, BLOCKR=0.6,
@@ -346,7 +346,7 @@ BUILDS = {
              (3, 'Heart of the Crusader', 3), (3, 'Conviction', 5), (3, 'Pursuit of Justice', 2),
          ]),
 
-    dict(key='shockadin', name='Shockadin (holy caster)', role='caster', school='spell', meta=True,
+    dict(key='shockadin', name='Shockadin', role='caster', school='spell', meta=True,
          desc='Meta build: Holy Shock as a damage spell, in plate, with a shield. Odd and effective.',
          dualWield=None, shield=True, armorFloor=0.6,
          weights=w(W_CASTER, INT=0.7, SPI=0.15, MP5=0.6, STA=0.4, ARMOR=0.02),
@@ -441,7 +441,7 @@ BUILDS = {
              (1, 'Lethality', 5), (1, 'Vigor', 1),
          ]),
 
-    dict(key='riposte', name='Riposte (tank)', role='tank', school='melee', meta=True,
+    dict(key='riposte', name='Riposte', role='tank', school='melee', meta=True,
          desc='Meta build: parry, Riposte and Vitality in leather. Tanks five-mans nothing else will let a rogue tank.',
          dualWield=('always',), armorFloor=0.5,
          weights=w(W_TANK, AGI=2.6, STR=0.8, STA=2.2, DEF=1.4, DODGE=2.4, PARRY=2.6,

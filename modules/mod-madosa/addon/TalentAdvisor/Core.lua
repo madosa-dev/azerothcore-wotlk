@@ -664,11 +664,18 @@ end
 
 local picker
 local PICKER_WIDTH = 460
+local HEADER_INSET = 16          -- a group heading, from the panel edge
+local ROW_INSET = 12             -- a build row, from the panel edge
+local HEADER_GAP = 10            -- above a heading
+local ROW_GAP = 2                -- above a row
+local ROW_HEIGHT = 32
+local FOOT_GAP = 14              -- between the last row and the footer
+local FOOT_MARGIN = 16           -- below the footer
 
 local function PickerRow(parent, index)
     local row = CreateFrame("Button", nil, parent)
-    row:SetHeight(32)
-    row:SetPoint("LEFT", 12, 0); row:SetPoint("RIGHT", -12, 0)
+    row:SetHeight(ROW_HEIGHT)
+    row:SetPoint("LEFT", ROW_INSET, 0); row:SetPoint("RIGHT", -ROW_INSET, 0)
     row.bg = row:CreateTexture(nil, "BACKGROUND")
     row.bg:SetAllPoints()
     row.bg:SetTexture(1, 1, 1, 0.06)
@@ -762,25 +769,28 @@ function TA.ShowPicker()
         .. "is an upgrade, both follow from this. You can change it at any time with /ta pick; "
         .. "the game charges gold for the respec, the addon does not care.")
 
-    local anchor, y = nil, -(40 + picker.intro:GetStringHeight() + 12)
-    local hIndex, rIndex, height = 0, 0, 0
+    local top = 40 + picker.intro:GetStringHeight() + 12
+    local anchor, hIndex, rIndex, height = nil, 0, 0, 0
     for _, group in ipairs(groups) do
         hIndex = hIndex + 1
         local h = PickerHeader(hIndex)
         h:ClearAllPoints()
-        if anchor then h:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", -4, -10)
-        else h:SetPoint("TOPLEFT", 16, y) end
+        -- ROW_INSET - HEADER_INSET: a heading stepping off a row has to come
+        -- back out to the heading inset, or every group after the first sits
+        -- further left than the one above it.
+        if anchor then h:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 4, -HEADER_GAP)
+        else h:SetPoint("TOPLEFT", HEADER_INSET, -top) end
         h:SetText(ROLE_LABEL[group.role] or group.role)
         h:Show()
         anchor = h
-        height = height + 22
+        height = height + h:GetStringHeight() + HEADER_GAP
 
         for _, entry in ipairs(group.builds) do
             rIndex = rIndex + 1
             local row = picker.rows[rIndex] or PickerRow(picker, rIndex)
             row:ClearAllPoints()
-            row:SetPoint("LEFT", 12, 0); row:SetPoint("RIGHT", -12, 0)
-            row:SetPoint("TOP", anchor, "BOTTOM", 0, -2)
+            row:SetPoint("LEFT", ROW_INSET, 0); row:SetPoint("RIGHT", -ROW_INSET, 0)
+            row:SetPoint("TOP", anchor, "BOTTOM", 0, -ROW_GAP)
             row.buildKey = entry.key
             local mark = entry.build.meta and " |cffff9900(meta)|r" or ""
             if entry.key == suggested then mark = mark .. " |cff888888(usual pick)|r" end
@@ -789,14 +799,13 @@ function TA.ShowPicker()
             row.desc:SetText(entry.build.desc or "")
             row:Show()
             anchor = row
-            height = height + 34
+            height = height + ROW_HEIGHT + ROW_GAP
         end
     end
 
     picker.foot:SetText("Meta builds work, but they are the odd way to play the class - "
         .. "slower to kill things, better at surviving them.")
-    picker:SetHeight(40 + picker.intro:GetStringHeight() + 12 + height + 16
-        + picker.foot:GetStringHeight() + 16)
+    picker:SetHeight(top + height + FOOT_GAP + picker.foot:GetStringHeight() + FOOT_MARGIN)
     picker:Show()
 end
 

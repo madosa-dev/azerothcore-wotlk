@@ -5,13 +5,15 @@
 -- half run_tests.lua cannot reach - that one calls the pure functions with
 -- plain data, this one goes through the events and the frames.
 --
--- It cannot see pixels. Fonts have no metrics in the simulator, so layout is
--- only checked for sanity: everything shown is anchored to something and the
--- frame ends up with a positive height that grows with its contents.
+-- Geometry is real here: wow_layout.lua resolves the anchors and measures the
+-- strings with the client's own font, so the layout assertions are about
+-- whether things actually fit, not whether a guessed number came out positive.
 
 local here = arg and arg[0] and arg[0]:match("^(.*)[/\\]") or "."
 local addon = arg[1] or (here .. "/../../addon/TalentAdvisor")
 dofile(here .. "/trees.lua")
+dofile(here .. "/fontmetrics.lua")
+dofile(here .. "/wow_layout.lua")
 dofile(here .. "/wow_sim.lua")
 dofile(addon .. "/Builds.lua")
 dofile(addon .. "/Core.lua")
@@ -59,6 +61,14 @@ test("a fresh character is asked before anything is advised", function()
     has(p.title:GetText(), "what do you want to play", "picker title")
 end)
 
+test("the picker names the class it is asking about", function()
+    for _, class in ipairs({ "SHAMAN", "WARRIOR", "PALADIN", "ROGUE" }) do
+        World.Reset(class, 10)
+        Sim.Event("PLAYER_LOGIN")
+        has(Sim.Picker().title:GetText(), (UnitClass("player")), class .. " picker title")
+    end
+end)
+
 test("the picker groups by role, in role order, with a row per build", function()
     World.Reset("SHAMAN", 10)
     Sim.Event("PLAYER_LOGIN")
@@ -90,7 +100,7 @@ test("the picker is laid out: headers anchored, height positive and class-depend
     local shaman = p:GetHeight()
     assert(shaman > 0, "picker has no height")
     for _, h in ipairs(p.headers) do
-        if h.shown then assert(h:GetNumPoints() > 0, "a header is not anchored") end
+        if h:IsShown() then assert(h:GetNumPoints() > 0, "a header is not anchored") end
     end
     World.Reset("WARRIOR", 10)
     Sim.Event("PLAYER_LOGIN")
@@ -444,6 +454,142 @@ test("/ta build switches directly, and rejects a name that is not there", functi
     Sim.Slash("build shadow")
     eq(TA.state.buildKey, "holy", "an unknown name must not change anything")
     has(Sim.Chat(), "unknown build", "complaint")
+end)
+
+----------------------------------------------------------------------------
+-- Layout
+--
+-- These are the checks the old inert stub could not make: the anchors are
+-- resolved and the strings measured with the client's font, so "does the
+-- panel actually cover its own contents" has an answer.
+----------------------------------------------------------------------------
+
+-- A close button is meant to hang over the corner of its frame; everything
+-- else has to stay inside.
+local function overhangs(w) return w._template == "UIPanelCloseButton" end
+
+local function assertInside(frame, what)
+    for _, w in ipairs(Sim.Tree(frame)) do
+        if w ~= frame and not overhangs(w) then
+            local ok, side = Layout.Contains(frame, w, 0.5)
+            if not ok then
+                local label = (w.GetText and w:GetText()) and Layout.Visible(w:GetText()) or w._kind
+                error(what .. ": " .. label .. " sticks out of the " .. side, 2)
+            end
+        end
+    end
+end
+
+test("the picker covers its own contents, for every class", function()
+    for _, class in ipairs({ "SHAMAN", "WARRIOR", "PALADIN", "ROGUE" }) do
+        World.Reset(class, 10)
+        Sim.Event("PLAYER_LOGIN")
+        local p = Sim.Picker()
+        assertInside(p, class .. " picker")
+        local ok, side = Layout.Contains(UIParent, p)
+        assert(ok, class .. " picker runs off the " .. tostring(side) .. " of the screen")
+    end
+end)
+
+test("the group headings line up with each other", function()
+    for _, class in ipairs({ "SHAMAN", "WARRIOR", "PALADIN", "ROGUE" }) do
+        World.Reset(class, 10)
+        Sim.Event("PLAYER_LOGIN")
+        local left
+        for _, h in ipairs(Sim.Picker().headers) do
+            if h:IsShown() then
+                local l = Layout.Rect(h)
+                if left then
+                    assert(math.abs(l - left) < 0.5,
+                        class .. ": '" .. h:GetText() .. "' is at " .. l .. ", the heading above it at " .. left)
+                end
+                left = l
+            end
+        end
+    end
+end)
+
+test("picker rows do not run into each other or into the footer", function()
+    for _, class in ipairs({ "SHAMAN", "WARRIOR", "PALADIN", "ROGUE" }) do
+        World.Reset(class, 10)
+        Sim.Event("PLAYER_LOGIN")
+        local p = Sim.Picker()
+        local rows = Sim.PickerRows()
+        for i = 2, #rows do
+            assert(not Layout.Overlaps(rows[i - 1], rows[i]), class .. ": rows overlap")
+        end
+        local _, lastBottom = Layout.Rect(rows[#rows])
+        local _, _, _, footTop = Layout.Rect(p.foot)
+        assert(lastBottom - footTop >= 8,
+            string.format("%s: only %.1fpx between the last row and the footer", class, lastBottom - footTop))
+    end
+end)
+
+test("a build's name and description fit the row they are drawn in", function()
+    for _, class in ipairs({ "SHAMAN", "WARRIOR", "PALADIN", "ROGUE" }) do
+        World.Reset(class, 10)
+        Sim.Event("PLAYER_LOGIN")
+        for _, row in ipairs(Sim.PickerRows()) do
+            for _, fs in ipairs({ row.name, row.desc }) do
+                local lines = Layout.Wrap(fs:GetText(), Layout.FontSize(fs), fs:GetWidth())
+                assert(#lines == 1, string.format("%s/%s: %q needs %d lines in %.0fpx",
+                    class, row.buildKey, Layout.Visible(fs:GetText()), #lines, fs:GetWidth()))
+            end
+            local ok, side = Layout.Contains(row, row.desc, 0.5)
+            assert(ok, class .. "/" .. row.buildKey .. ": the description leaves the row at the " .. tostring(side))
+        end
+    end
+end)
+
+test("a build name does not repeat the heading it sits under", function()
+    local role = { melee = "melee", caster = "caster", heal = "heal", tank = "tank" }
+    for _, class in ipairs({ "SHAMAN", "WARRIOR", "PALADIN", "ROGUE" }) do
+        for _, group in ipairs(TA.BuildsByRole(class)) do
+            for _, e in ipairs(group.builds) do
+                local lower = e.build.name:lower()
+                assert(not lower:find(role[group.role], 1, true),
+                    class .. "/" .. e.key .. ": the name says '" .. group.role
+                        .. "' and so does the heading above it")
+            end
+        end
+    end
+end)
+
+test("the advisor frame covers its contents, full of gear and a two-line queue", function()
+    World.Reset("SHAMAN", 40)
+    TalentAdvisorCharDB = { build = "enhancement" }
+    World.SetRank(3, 1, 3, 5)                     -- off-plan points, so the queue wraps
+    World.AddItem("worn", { id = 200, name = "worn", equipLoc = "INVTYPE_CHEST",
+        stats = { AP = 10, ARMOR = 400 } })
+    World.Equip(5, "worn")
+    for i = 1, 8 do                               -- more upgrades than the frame has rows
+        World.AddItem("up" .. i, { id = 200 + i, name = "Upgrade Number " .. i,
+            equipLoc = "INVTYPE_CHEST", stats = { AP = 20 + i * 10, STR = 10, ARMOR = 420 } })
+        World.PutInBag(0, i, "up" .. i)
+    end
+    World.unspent = 1
+    Sim.Login()
+    local f = Sim.Frame()
+    assertInside(f, "advisor frame")
+    local ok, side = Layout.Contains(UIParent, f)
+    assert(ok, "the advisor frame runs off the " .. tostring(side) .. " of the screen")
+    assert(not Layout.Overlaps(f.title, f.close), "the title runs under the close button")
+    assert(not Layout.Overlaps(f.next, f.learn), "the next pick runs under the Learn button")
+    assert(#Sim.GearRows() == 6, "the frame should cap at its six rows")
+
+    -- the height is worked out by hand in Render(); this is what says the sum
+    -- still matches where the rows actually end up
+    local _, frameBottom = Layout.Rect(f)
+    local lowest
+    for _, w in ipairs(Sim.Tree(f)) do
+        if w ~= f then
+            local _, b = Layout.Rect(w)
+            if not lowest or b < lowest then lowest = b end
+        end
+    end
+    local padding = lowest - frameBottom
+    assert(padding >= 4 and padding <= 32,
+        string.format("%.1fpx of padding under the last row - the height sum has drifted", padding))
 end)
 
 ----------------------------------------------------------------------------
