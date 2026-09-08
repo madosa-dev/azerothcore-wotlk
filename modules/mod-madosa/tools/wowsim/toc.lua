@@ -99,6 +99,10 @@ function Sim.LoadAddon(dir, opts)
     -- fails on line one.
     toc.private = {}
     Sim.loading = toc
+    -- The client has an addon in its list before it runs a line of it, and
+    -- addons read their own version out of it - pfQuest works out where it
+    -- lives by asking GetAddOnInfo for each name it might have been given.
+    Addons[name] = toc
 
 
     for _, dep in ipairs(toc.dependencies) do
@@ -119,12 +123,13 @@ function Sim.LoadAddon(dir, opts)
     for _, file in ipairs(toc.files) do
         local path = dir .. "/" .. file
         if not fileExists(path) then
-            return nil, name .. ": " .. file .. " is in the .toc but not on disk"
+            Addons[name] = nil
+        return nil, name .. ": " .. file .. " is in the .toc but not on disk"
         end
         if file:lower():match("%.xml$") then
             if not opts.ignoreXml then
                 local ok, err = Sim.LoadXml(path, path:match("^(.*)[/\\]"))
-                if not ok then return nil, name .. " (" .. file .. "): " .. tostring(err) end
+                if not ok then Addons[name] = nil; return nil, name .. " (" .. file .. "): " .. tostring(err) end
             end
         else
             -- read and compile rather than loadfile, so a UTF-8 byte order
@@ -132,14 +137,13 @@ function Sim.LoadAddon(dir, opts)
             -- mistaken for a syntax error
             local body = Sim.ReadFile(path)
             local chunk, err = loadstring(body, "@" .. path)
-            if not chunk then return nil, name .. ": " .. tostring(err) end
+            if not chunk then Addons[name] = nil; return nil, name .. ": " .. tostring(err) end
             local ok, runErr = pcall(chunk, name, toc.private)
-            if not ok then return nil, name .. " (" .. file .. "): " .. tostring(runErr) end
+            if not ok then Addons[name] = nil; return nil, name .. " (" .. file .. "): " .. tostring(runErr) end
         end
     end
 
     Sim.loading = nil
-    Addons[name] = toc
     return toc
 end
 

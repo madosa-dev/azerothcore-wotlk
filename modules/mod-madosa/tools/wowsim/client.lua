@@ -215,6 +215,16 @@ function Widget:SetTexture(...) self._texture = { ... } end
 function Widget:SetFontObject(f) self._font = f; Layout.Invalidate() end
 function Widget:SetBackdrop(b) self._backdrop = b end
 function Widget:SetBackdropColor(r, g, b, a) self._backdropColor = { r, g, b, a or 1 } end
+function Widget:SetBackdropBorderColor(r, g, b, a) self._borderColor = { r, g, b, a or 1 } end
+function Widget:GetBackdrop() return self._backdrop end
+function Widget:GetBackdropColor()
+    local c = self._backdropColor or { 0, 0, 0, 1 }
+    return c[1], c[2], c[3], c[4]
+end
+function Widget:GetBackdropBorderColor()
+    local c = self._borderColor or { 1, 1, 1, 1 }
+    return c[1], c[2], c[3], c[4]
+end
 function Widget:EnableMouse() end
 function Widget:SetMovable() end
 function Widget:SetClampedToScreen() end
@@ -307,6 +317,50 @@ function Widget:SetShadowOffset() end
 function Widget:SetShadowColor() end
 function Widget:SetJustifyV() end
 function Widget:SetSpacing() end
+-- Slider, EditBox, StatusBar and Button trimmings. None of them change the
+-- geometry, so they only have to exist and remember what they were given.
+-- SetThumbTexture takes a path and makes a texture out of it; the addon then
+-- asks for that texture back and sizes it, so a real region has to exist.
+function Widget:SetThumbTexture(texture)
+    if type(texture) == "table" then
+        self._thumb = texture
+    else
+        self._thumb = self._thumb or self:CreateTexture(nil, "ARTWORK")
+        self._thumb:SetTexture(texture)
+    end
+end
+function Widget:GetThumbTexture() return self._thumb end
+function Widget:SetValueStep(v) self._step = v end
+function Widget:SetObeyStepOnDrag() end
+function Widget:SetCheckedTexture(t) self._checkedTexture = t end
+function Widget:GetCheckedTexture() return self._checkedTexture end
+function Widget:SetDisabledCheckedTexture() end
+function Widget:SetNormalFontObject(f) self._font = f end
+function Widget:SetHighlightFontObject() end
+function Widget:SetDisabledFontObject() end
+function Widget:SetFontString(fs) self._fontString = fs end
+function Widget:GetFontString() return self._fontString end
+function Widget:SetTextInsets() end
+function Widget:SetClampRectInsets() end
+function Widget:SetMultiLine() end
+function Widget:SetCursorPosition() end
+function Widget:SetInsertMode() end
+function Widget:Insert(text) self._text = (self._text or "") .. tostring(text) end
+function Widget:GetNumLetters() return #(self._text or "") end
+function Widget:EnableMouseWheel() end
+function Widget:SetPropagateKeyboardInput() end
+function Widget:SetFading() end
+function Widget:SetMaxLines() end
+function Widget:AddMessage(msg) CHAT[#CHAT + 1] = tostring(msg) end
+function Widget:Clear() self._text = nil end
+function Widget:SetModel() end
+function Widget:SetModelScale() end
+function Widget:SetPosition() end
+function Widget:ClearModel() end
+function Widget:SetSequence() end
+function Widget:SetCamera() end
+function Widget:SetRotation() end
+function Widget:GetRotation() return 0 end
 function Widget:CreateAnimationGroup()
     return setmetatable({}, { __index = function() return function() end end })
 end

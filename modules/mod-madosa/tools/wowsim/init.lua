@@ -19,6 +19,7 @@ for _, file in ipairs({
     "layout.lua",             -- anchors and text measurement
     "client.lua",             -- widgets, the game API, and the World behind it
     "compat.lua",             -- the globals WoW adds on top of Lua 5.1
+    "frames.lua",             -- the FrameXML pieces an addon may assume exist
     "xml.lua",                -- frames declared in XML
     "toc.lua",                -- loading an addon from its .toc
     "apitrace.lua",           -- what the harness does not implement yet

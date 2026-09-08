@@ -52,11 +52,29 @@ table.wipe = wipe
 
 function getn(t) return #t end
 
+-- Vanilla-era global accessors. Addons ported forward from 1.12 - pfQuest is
+-- one - still use them everywhere.
+function getglobal(name) return rawget(_G, name) end
+function setglobal(name, value) rawset(_G, name, value) end
+function TEXT(name) return rawget(_G, name) or name end
+
 -- math --------------------------------------------------------------------
 abs, ceil, floor, max, min, random, sqrt =
     math.abs, math.ceil, math.floor, math.max, math.min, math.random, math.sqrt
 mod, fmod = math.fmod, math.fmod
 PI = math.pi
+
+-- WoW's sin/cos/tan take DEGREES, not radians - they are the client's own,
+-- not math.sin. Addons that mix them up with a radian-valued angle get
+-- nonsense, which is a real bug worth being able to reproduce here.
+function sin(deg) return math.sin(math.rad(deg)) end
+function cos(deg) return math.cos(math.rad(deg)) end
+function tan(deg) return math.tan(math.rad(deg)) end
+function asin(x) return math.deg(math.asin(x)) end
+function acos(x) return math.deg(math.acos(x)) end
+function atan(x) return math.deg(math.atan(x)) end
+function atan2(y, x) return math.deg(math.atan2(y, x)) end
+function log10(x) return math.log(x) / math.log(10) end
 
 -- bit ---------------------------------------------------------------------
 -- 3.3.5 ships a bit library; lua5.1 alone does not, so this is the plain

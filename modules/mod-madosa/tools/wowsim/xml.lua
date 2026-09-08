@@ -76,8 +76,9 @@ Sim.ParseXml = parse
 
 local function kidsNamed(node, tag)
     local out = {}
+    if type(node) ~= "table" or not node.kids then return out end
     for _, kid in ipairs(node.kids) do
-        if kid.tag:lower() == tag:lower() then out[#out + 1] = kid end
+        if kid.tag and kid.tag:lower() == tag:lower() then out[#out + 1] = kid end
     end
     return out
 end
@@ -329,6 +330,20 @@ local function readFile(path)
 end
 Sim.ReadFile = readFile
 
+-- One Lua file of the addon being loaded, with the two varargs the client
+-- hands every file.
+function Sim.RunLua(path)
+    local body = readFile(path)
+    if not body then return nil, "no such file: " .. path end
+    local chunk, err = loadstring(body, "@" .. path)
+    if not chunk then return nil, err end
+    local loading = Sim.loading
+    local ok, runErr = pcall(chunk, loading and loading.name or "",
+                             loading and loading.private or {})
+    if not ok then return nil, tostring(runErr) end
+    return true
+end
+
 -- dir is where $parent-relative includes are resolved from.
 function Sim.LoadXml(path, dir)
     dir = dir or path:match("^(.*)[/\\]") or "."
@@ -336,23 +351,24 @@ function Sim.LoadXml(path, dir)
     if not text then return nil, "no such file: " .. path end
     local root = parse(text)
     local ui = firstNamed(root, "Ui") or root
-    for _, node in ipairs(ui.kids) do
+    for _, node in ipairs(ui.kids or {}) do
         local tag = node.tag:lower()
-        if tag == "include" then
-            -- an included file's own includes are relative to where that file
-            -- lives, not to where the chain started
-            local ok, err = Sim.LoadXml(dir .. "/" .. node.attr.file:gsub("\\", "/"))
-            if not ok then return nil, err end
-        elseif tag == "script" and node.attr.file then
+        if tag == "include" and node.attr and node.attr.file then
+            -- Include pulls in either more XML or a Lua file - pfQuest loads
+            -- its whole database that way - and an included file's own
+            -- includes are relative to where that file lives, not to where
+            -- the chain started.
             local file = dir .. "/" .. node.attr.file:gsub("\\", "/")
-            local body = readFile(file)
-            if not body then return nil, "no such file: " .. file end
-            local chunk, err = loadstring(body, "@" .. file)
-            if not chunk then return nil, err end
-            local loading = Sim.loading
-            local ok, runErr = pcall(chunk, loading and loading.name or "",
-                                     loading and loading.private or {})
-            if not ok then return nil, tostring(runErr) end
+            local ok, err
+            if file:lower():match("%.lua$") then
+                ok, err = Sim.RunLua(file)
+            else
+                ok, err = Sim.LoadXml(file)
+            end
+            if not ok then return nil, err end
+        elseif tag == "script" and node.attr and node.attr.file then
+            local ok, err = Sim.RunLua(dir .. "/" .. node.attr.file:gsub("\\", "/"))
+            if not ok then return nil, err end
         elseif tag == "script" and node.text then
             local chunk, err = loadstring(node.text, "@" .. path)
             if not chunk then return nil, err end
