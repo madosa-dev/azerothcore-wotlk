@@ -65,6 +65,7 @@ local PREFIX = "|cff33ccffTalentAdvisor|r: "
 local UPGRADE_MARGIN = 1.03      -- candidate must beat the worn score by this factor
 local MAX_ROWS = 6               -- gear rows in the frame
 local RESCAN_DELAY = 0.6         -- seconds of bag quiet before a rescan
+local TALENT_RETRY = 0.5         -- seconds between asks while the tree is missing
 local NEXT_PICKS = 4             -- picks shown in the frame
 
 local function Print(msg)
@@ -97,23 +98,32 @@ function TA.PlanLevel(i) return 9 + i end
 --   byKey[tab:tier:col] = { name, icon, tier, col, rank, maxRank, tab, index }
 --   points[tab]         = points spent in that tree
 --   tabs[tab]           = tree name
+-- The tree as the client currently reports it. Right after login it reports
+-- nothing at all: the talent data arrives from the server a moment after
+-- PLAYER_LOGIN, and until it does GetTalentInfo answers nil for everything.
+-- That is why `loaded` is here - an empty tree means "not yet", which is a
+-- different thing from "this build does not belong to this class", and saying
+-- the second when the first is true is just wrong.
 function TA.ReadTalents()
     local group = GetActiveTalentGroup and GetActiveTalentGroup() or nil
-    local t = { byKey = {}, points = {}, tabs = {} }
-    for tab = 1, GetNumTalentTabs() do
+    if group == 0 then group = nil end
+    local t = { byKey = {}, points = {}, tabs = {}, count = 0 }
+    for tab = 1, (GetNumTalentTabs() or 0) do
         local tabName, _, spent = GetTalentTabInfo(tab, nil, nil, group)
         t.tabs[tab] = tabName
         t.points[tab] = spent or 0
         for index = 1, GetNumTalents(tab) do
             local name, icon, tier, col, rank, maxRank = GetTalentInfo(tab, index, nil, nil, group)
-            if name then
+            if name and tier and col then
                 t.byKey[Key(tab, tier, col)] = {
                     name = name, icon = icon, tier = tier, col = col,
                     rank = rank or 0, maxRank = maxRank or 0, tab = tab, index = index,
                 }
+                t.count = t.count + 1
             end
         end
     end
+    t.loaded = t.count > 0
     return t
 end
 
@@ -576,10 +586,20 @@ local function CanDualWield()
     return t ~= nil and t.rank > 0
 end
 
+-- Returns true once the client has actually handed the tree over. While it
+-- has not, nothing is analysed and the caller is expected to come back.
 function TA.RefreshTalents()
-    if not state.plan then return end
-    state.talents = TA.ReadTalents()
+    if not state.plan then return false end
+    local talents = TA.ReadTalents()
+    if not talents.loaded then
+        state.talents, state.analysis = nil, nil
+        state.talentsPending = true
+        return false
+    end
+    state.talentsPending = false
+    state.talents = talents
     state.analysis = TA.Analyse(state.plan, state.talents, NEXT_PICKS)
+    return true
 end
 
 function TA.RefreshGear()
@@ -640,6 +660,19 @@ function TA.LearnNext()
     LearnTalent(pick.talent.tab, pick.talent.index)
     Print(string.format("Learning %s (%d/%d).", pick.talent.name, pick.rank, pick.talent.maxRank))
     return true
+end
+
+-- The line printed once the addon knows where the next point goes - on login,
+-- or later if the talent tree was still on its way.
+function TA.Announce()
+    local a = state.analysis
+    if not a or not state.build then return end
+    if a.picks[1] then
+        Print(string.format("%s - next: %s (%d/%d). /ta pick to change build, /ta for the rest.",
+            state.build.name, a.picks[1].talent.name, a.picks[1].rank, a.picks[1].talent.maxRank))
+    else
+        Print(string.format("%s - plan complete. /ta pick to change build.", state.build.name))
+    end
 end
 
 function TA.Equip(u)
@@ -924,9 +957,16 @@ function TA.Render()
         frame.icon:SetTexture(nil)
         frame.next:SetText("No build chosen - /ta pick")
         frame.sub:SetText(""); frame.queue:SetText(""); frame.learn:Hide()
-    elseif not a or #a.unknown > 0 then
-        frame.next:SetText("Build does not match the talent trees.")
-        frame.sub:SetText(a and table.concat(a.unknown, " ") or ""); frame.queue:SetText(""); frame.learn:Hide()
+    elseif state.talentsPending or not a then
+        frame.icon:SetTexture(nil)
+        frame.next:SetText("Waiting for the talent tree...")
+        frame.sub:SetText("The server sends it a moment after you log in.")
+        frame.queue:SetText(""); frame.learn:Hide()
+    elseif #a.unknown > 0 then
+        frame.icon:SetTexture(nil)
+        frame.next:SetText("This build is not for this class.")
+        frame.sub:SetText("/ta pick to choose one that is.")
+        frame.queue:SetText(""); frame.learn:Hide()
     elseif #a.picks == 0 then
         frame.icon:SetTexture(nil)
         frame.next:SetText("Plan complete - " .. state.build.name)
@@ -1009,7 +1049,21 @@ local events = CreateFrame("Frame")
 -- frame may be closed, and the chat notice about a new upgrade still has to
 -- come. An item the client has not cached yet marks the scan dirty again.
 events.timer = 0
+events.talentTimer = 0
 events:SetScript("OnUpdate", function(self, elapsed)
+    -- The tree turns up a moment after login, without an event of its own on
+    -- 3.3.5, so it is polled until it does.
+    if state.talentsPending then
+        self.talentTimer = self.talentTimer + elapsed
+        if self.talentTimer >= TALENT_RETRY then
+            self.talentTimer = 0
+            if TA.RefreshTalents() then
+                state.dirtyGear = true
+                TA.Render()
+                TA.Announce()
+            end
+        end
+    end
     if not state.dirtyGear then return end
     self.timer = self.timer + elapsed
     if self.timer < RESCAN_DELAY then return end
@@ -1020,6 +1074,8 @@ events:SetScript("OnUpdate", function(self, elapsed)
 end)
 
 events:RegisterEvent("PLAYER_LOGIN")
+events:RegisterEvent("PLAYER_ENTERING_WORLD")
+events:RegisterEvent("PLAYER_ALIVE")
 events:RegisterEvent("PLAYER_LEVEL_UP")
 events:RegisterEvent("CHARACTER_POINTS_CHANGED")
 events:RegisterEvent("PLAYER_TALENT_UPDATE")
@@ -1030,8 +1086,9 @@ events:RegisterEvent("UNIT_INVENTORY_CHANGED")
 events:RegisterEvent("SKILL_LINES_CHANGED")
 events:RegisterEvent("PLAYER_REGEN_ENABLED")
 events:SetScript("OnEvent", function(_, event, arg1)
-    if event == "PLAYER_LOGIN" then
-        BuildFrame()
+    if event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" or event == "PLAYER_ALIVE" then
+        if not frame then BuildFrame() end
+        if state.build and state.talents then return end     -- already up and running
         local ok, why = TA.SelectBuild()
         if not ok and why == "unchosen" then
             TA.Render()
@@ -1042,18 +1099,22 @@ events:SetScript("OnEvent", function(_, event, arg1)
             TA.Render()
             return
         end
-        TA.RefreshTalents()
-        state.dirtyGear = true
-        TA.Render()
-        local a = state.analysis
-        if a and a.picks[1] then
-            Print(string.format("%s - next: %s (%d/%d). /ta for options.", state.build.name,
-                a.picks[1].talent.name, a.picks[1].rank, a.picks[1].talent.maxRank))
+        if TA.RefreshTalents() then
+            state.dirtyGear = true
+            TA.Render()
+            TA.Announce()
+        else
+            TA.Render()                  -- the tree is not here yet; OnUpdate keeps asking
         end
     elseif event == "PLAYER_LEVEL_UP" or event == "CHARACTER_POINTS_CHANGED" then
         OnLevelOrPoints()
     elseif event == "PLAYER_TALENT_UPDATE" or event == "ACTIVE_TALENT_GROUP_CHANGED" then
-        TA.RefreshTalents(); state.dirtyGear = true; TA.Render()
+        local had = state.talents ~= nil
+        if TA.RefreshTalents() then
+            state.dirtyGear = true
+            TA.Render()
+            if not had then TA.Announce() end
+        end
     elseif event == "UNIT_INVENTORY_CHANGED" then
         if arg1 == "player" then state.dirtyGear = true end
     elseif event == "PLAYER_REGEN_ENABLED" or event == "BAG_UPDATE" or event == "PLAYER_EQUIPMENT_CHANGED"

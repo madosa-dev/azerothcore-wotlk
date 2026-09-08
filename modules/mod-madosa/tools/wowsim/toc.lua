@@ -151,3 +151,11 @@ function Sim.Enter(...)
     end
     Sim.Tick()
 end
+
+-- The talent tree arriving from the server, which on 3.3.5 happens a moment
+-- after login and carries no event of its own worth relying on.
+function Sim.TalentsArrive()
+    World.talentsLoaded = true
+    Sim.Event("PLAYER_TALENT_UPDATE")
+    Sim.Tick()
+end

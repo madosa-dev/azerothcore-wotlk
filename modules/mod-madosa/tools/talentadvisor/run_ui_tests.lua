@@ -624,6 +624,49 @@ end)
 -- The awkward states
 ----------------------------------------------------------------------------
 
+test("the tree arriving late is waited for, not mistaken for a wrong build", function()
+    World.Reset("SHAMAN", 30)
+    TalentAdvisorCharDB = { build = "enhancement" }
+    World.talentsLoaded = false          -- the moment after login on a real server
+    Sim.Event("PLAYER_LOGIN")
+    Sim.Events():Fire("OnUpdate", 1.0)
+    local f = Sim.Frame()
+    assert(not Sim.ChatHas("does not match"), "the addon accused the build")
+    has(f.next:GetText(), "Waiting for the talent tree", "frame while the tree is missing")
+    assert(not f.learn:IsShown(), "Learn offered with no tree to learn from")
+
+    Sim.TalentsArrive()
+    has(Sim.Frame().next:GetText(), "Ancestral Knowledge", "first pick once the tree is here")
+    has(Sim.Chat(), "next: Ancestral Knowledge", "the announcement waited for the tree")
+    has(Sim.Chat(), "/ta pick", "and says how to change build")
+end)
+
+test("the tree turning up on its own poll is enough - no event needed", function()
+    World.Reset("SHAMAN", 30)
+    TalentAdvisorCharDB = { build = "enhancement" }
+    World.talentsLoaded = false
+    Sim.Event("PLAYER_LOGIN")
+    Sim.Events():Fire("OnUpdate", 1.0)
+    has(Sim.Frame().next:GetText(), "Waiting", "still waiting")
+    World.talentsLoaded = true           -- no event, just data appearing
+    Sim.Events():Fire("OnUpdate", 1.0)
+    Sim.Tick()
+    has(Sim.Frame().next:GetText(), "Ancestral Knowledge", "picked up by polling")
+end)
+
+test("a build really meant for another class says so, and says what to do", function()
+    World.Reset("WARRIOR", 30)
+    TalentAdvisorCharDB = { build = "arms" }
+    Sim.Login()
+    -- swap the plan under it for a shaman one, the way a stale saved variable
+    -- from another character would
+    TalentAdvisor.state.plan = TalentAdvisor.ExpandPlan(TalentAdvisorBuilds.SHAMAN.restoration)
+    TA.RefreshTalents()
+    TA.Render()
+    has(Sim.Frame().next:GetText(), "not for this class", "the real mismatch case")
+    has(Sim.Frame().sub:GetText(), "/ta pick", "and how to fix it")
+end)
+
 test("a saved build that no longer exists asks again instead of going quiet", function()
     World.Reset("SHAMAN", 30)
     TalentAdvisorCharDB = { build = "windfury-something-removed" }

@@ -37,6 +37,8 @@ World = {
     bagSize = 16,
     items = {},          -- [key] = { ... }
     useItemStats = true, -- false makes the addon fall back to the tooltip
+    talentsLoaded = true, -- false is the moment after login, before the server
+                          -- has sent the tree and GetTalentInfo answers nil
     combat = false,
     learned = {},        -- LearnTalent calls, in order
     equipCalls = {},     -- {bag, slot, invSlot} per Equip
@@ -74,6 +76,7 @@ function World.Reset(class, level)
     World.equipped, World.bags, World.items = {}, {}, {}
     World.learned, World.equipCalls = {}, {}
     World.useItemStats, World.combat, World.cursor = true, false, nil
+    World.talentsLoaded = true
     CHAT = {}
     -- A scenario starts on a fresh character: every SavedVariable the loaded
     -- addons declared goes back to what it is before the client has ever
@@ -431,11 +434,15 @@ function GetActiveTalentGroup() return World.group end
 function GetNumTalentTabs() return 3 end
 function GetTalentTabInfo(tab)
     local tree = TalentTrees[World.class]
-    if not tree or not tree[tab] then return nil end
+    if not tree or not tree[tab] or not World.talentsLoaded then return nil end
     return tree[tab].name, nil, World.spent[tab]
 end
-function GetNumTalents(tab) return #talentList(tab) end
+function GetNumTalents(tab)
+    if not World.talentsLoaded then return 0 end
+    return #talentList(tab)
+end
 function GetTalentInfo(tab, index)
+    if not World.talentsLoaded then return nil end
     local row = talentList(tab)[index]
     if not row then return nil end
     local tier, col, max, name = row[1], row[2], row[3], row[4]
