@@ -1,6 +1,5 @@
-# Regenerated from Talent.dbc by dump_trees.py; trees.lua next to it is the
-# committed form the tests read.
+# Regenerated from Talent.dbc by dump_trees.py; the harness data pack next to
+# it (../wowsim/data/talents.lua) is the committed form.
 talents.json
 
-# snapshot.lua + render.py regenerate these on demand.
-snapshots/
+__pycache__/

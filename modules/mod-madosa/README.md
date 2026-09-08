@@ -545,24 +545,17 @@ are substantial enough to stand on their own).
   - **Two test runs, neither of them needing a game.**
     `tools/talentadvisor/run_tests.lua` calls the pure functions with plain
     data - the plans, the walk, the scoring. `run_ui_tests.lua` runs the addon
-    itself inside a stand-in client: log in, answer the picker, level up, click
-    Learn, drop things in the bags, click a row.
-  - **The stand-in client lays frames out for real.** `wow_layout.lua` resolves
-    anchors the way the client does - two anchors on opposite sides give a
-    size, one anchor and a size give a position, a FontString pinned left and
-    right wraps at that width - and measures strings against the client's own
-    `FRIZQT__.TTF`, dumped by `fontmetrics.py`. So `GetStringHeight` is the
-    number WoW would give, and "is this panel tall enough for its own
-    contents", "do these rows run into the footer", "does this description fit
-    its row" are real questions with real answers. `wow_sim.lua` puts the API
-    on top of that: talents, bags, equipment and tooltips answer out of a
-    `World` table the test sets up.
-  - **And it can be looked at.** `snapshot.lua` writes the resolved rectangles
-    out and `render.py` draws them with that same font, so every screen has a
-    picture without a client running. What is approximate there is only the
-    art: Blizzard's backdrops are a flat fill and a one-pixel border, buttons
-    are plain boxes, icons are empty frames. Text, size, wrapping, colour and
-    position are the real thing.
+    itself inside [`tools/wowsim`](tools/wowsim/README.md), a stand-in 3.3.5
+    client: log in, answer the picker, level up, click Learn, drop things in
+    the bags, click a row. 35 scenarios, seven of them about layout.
+  - **The stand-in client is not addon-specific** - it loads any addon from its
+    `.toc`, Lua and XML alike, lays the frames out against the client's own
+    fonts, and draws the result with the client's own art. It is documented on
+    its own page; what matters here is that four of TalentAdvisor's bugs were
+    found by it and could not have been found any other way: a heading indented
+    differently from its neighbours, a panel with under a pixel of clearance
+    above its footer, a title that wrapped onto the icon below it, and three
+    descriptions that ran out of their rows once the font was the real one.
   - **A build is positions, not names.** Each step is `{tab, tier, column,
     points}` as `GetTalentInfo()` reports them, so the plan is independent of
     client language and a talent can be revisited (Improved Shields gets two

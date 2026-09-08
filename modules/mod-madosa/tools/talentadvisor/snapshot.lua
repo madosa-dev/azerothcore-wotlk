@@ -6,13 +6,10 @@
 -- without a game running.
 
 local here = arg and arg[0] and arg[0]:match("^(.*)[/\\]") or "."
-local out = arg[1] or (here .. "/snapshots")
+local out = arg[1] or (here .. "/../wowsim/snapshots")
 local addon = here .. "/../../addon/TalentAdvisor"
-for _, f in ipairs({ "trees.lua", "fontmetrics.lua", "wow_layout.lua", "wow_sim.lua" }) do
-    dofile(here .. "/" .. f)
-end
-dofile(addon .. "/Builds.lua")
-dofile(addon .. "/Core.lua")
+dofile(here .. "/../wowsim/init.lua")
+assert(Sim.LoadAddon(addon))
 
 os.execute('mkdir -p "' .. out .. '"')
 

@@ -11,12 +11,17 @@
 
 local here = arg and arg[0] and arg[0]:match("^(.*)[/\\]") or "."
 local addon = arg[1] or (here .. "/../../addon/TalentAdvisor")
-dofile(here .. "/trees.lua")
-dofile(here .. "/fontmetrics.lua")
-dofile(here .. "/wow_layout.lua")
-dofile(here .. "/wow_sim.lua")
-dofile(addon .. "/Builds.lua")
-dofile(addon .. "/Core.lua")
+dofile(here .. "/../wowsim/init.lua")
+assert(Sim.LoadAddon(addon))
+
+-- TalentAdvisor caches the chosen build on its own table, which outlives a
+-- scenario because the addon is only loaded once.
+World.OnReset(function()
+    local st = TalentAdvisor.state
+    st.build, st.plan, st.buildKey, st.talents, st.analysis = nil, nil, nil, nil, nil
+    st.upgrades, st.announced, st.worn = {}, {}, nil
+    st.dirtyGear, st.pendingItems = false, false
+end)
 local TA = TalentAdvisor
 
 local passed, failed = 0, 0
@@ -119,7 +124,6 @@ test("choosing a build closes the picker and starts the advice", function()
     eq(TA.state.buildKey, "restoration", "chosen build")
     eq(TalentAdvisorCharDB.build, "restoration", "choice was not remembered")
     has(Sim.Frame().title:GetText(), "Restoration", "frame title")
-    has(Sim.Frame().title:GetText(), "Healing", "frame title role")
     has(Sim.Chat(), "Restoration it is", "confirmation")
 end)
 
@@ -530,10 +534,20 @@ test("a build's name and description fit the row they are drawn in", function()
         World.Reset(class, 10)
         Sim.Event("PLAYER_LOGIN")
         for _, row in ipairs(Sim.PickerRows()) do
+            -- the room a line has is the row's, not the string's own: a
+            -- FontString anchored on one side only is exactly as wide as its
+            -- text and would always look like a perfect fit
+            local room = row:GetWidth() - 8
             for _, fs in ipairs({ row.name, row.desc }) do
-                local lines = Layout.Wrap(fs:GetText(), Layout.FontSize(fs), fs:GetWidth())
+                local font = Layout.FontOf(fs)
+                local lines = Layout.Wrap(fs:GetText(), font, room)
                 assert(#lines == 1, string.format("%s/%s: %q needs %d lines in %.0fpx",
-                    class, row.buildKey, Layout.Visible(fs:GetText()), #lines, fs:GetWidth()))
+                    class, row.buildKey, Layout.Visible(fs:GetText()), #lines, room))
+                -- fitting exactly is not fitting: leave room for a longer
+                -- font, a longer translation, or one more word
+                local used = Layout.Width(Layout.Visible(fs:GetText()), font) / room
+                assert(used <= 0.94, string.format("%s/%s: %q fills %.0f%% of its row",
+                    class, row.buildKey, Layout.Visible(fs:GetText()), used * 100))
             end
             local ok, side = Layout.Contains(row, row.desc, 0.5)
             assert(ok, class .. "/" .. row.buildKey .. ": the description leaves the row at the " .. tostring(side))
@@ -575,6 +589,20 @@ test("the advisor frame covers its contents, full of gear and a two-line queue",
     assert(ok, "the advisor frame runs off the " .. tostring(side) .. " of the screen")
     assert(not Layout.Overlaps(f.title, f.close), "the title runs under the close button")
     assert(not Layout.Overlaps(f.next, f.learn), "the next pick runs under the Learn button")
+
+    -- every line in the frame has one line of room; a string that wraps
+    -- pushes its own box down over whatever is under it
+    for _, fs in ipairs({ f.title, f.next, f.sub, f.gearTitle }) do
+        local lines = Layout.Wrap(fs:GetText(), Layout.FontOf(fs), fs:GetWidth())
+        assert(#lines == 1, string.format("%q wraps to %d lines in %.0fpx",
+            Layout.Visible(fs:GetText()), #lines, fs:GetWidth()))
+    end
+    for _, pair in ipairs({ { f.title, f.icon }, { f.title, f.next }, { f.next, f.sub },
+                           { f.sub, f.queue }, { f.queue, f.gearTitle } }) do
+        assert(not Layout.Overlaps(pair[1], pair[2]),
+            "two of the frame's own lines overlap: " ..
+            tostring(Layout.Visible(pair[1]:GetText() or "")):sub(1, 30))
+    end
     assert(#Sim.GearRows() == 6, "the frame should cap at its six rows")
 
     -- the height is worked out by hand in Render(); this is what says the sum

@@ -913,9 +913,10 @@ function TA.Render()
     if db.pos then frame:ClearAllPoints(); frame:SetPoint(db.pos[1], UIParent, db.pos[2], db.pos[3], db.pos[4]) end
 
     local a = state.analysis
+    -- Just the build here: the title has one line of room and the role is
+    -- what the picker was asking about, not news at this point.
     if state.build then
-        frame.title:SetText(string.format("Talent Advisor - %s|cff888888  %s|r", state.build.name,
-            ROLE_LABEL[state.build.role] or ""))
+        frame.title:SetText("Talent Advisor - " .. state.build.name)
     else
         frame.title:SetText("Talent Advisor")
     end

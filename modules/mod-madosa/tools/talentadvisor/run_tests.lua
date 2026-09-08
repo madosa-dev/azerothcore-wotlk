@@ -7,7 +7,7 @@
 local here = arg and arg[0] and arg[0]:match("^(.*)[/\\]") or "."
 local addon = arg[1] or (here .. "/../../addon/TalentAdvisor")
 dofile(here .. "/wow_stub.lua")
-dofile(here .. "/trees.lua")
+dofile(here .. "/../wowsim/data/talents.lua")
 dofile(addon .. "/Builds.lua")
 dofile(addon .. "/Core.lua")
 local TA = TalentAdvisor

@@ -41,6 +41,7 @@ World = {
     learned = {},        -- LearnTalent calls, in order
     equipCalls = {},     -- {bag, slot, invSlot} per Equip
     cursor = nil,
+    onReset = {},        -- hooks for addon state outside SavedVariables
 }
 
 local function talentList(tab)
@@ -73,17 +74,23 @@ function World.Reset(class, level)
     World.equipped, World.bags, World.items = {}, {}, {}
     World.learned, World.equipCalls = {}, {}
     World.useItemStats, World.combat, World.cursor = true, false, nil
-    TalentAdvisorDB, TalentAdvisorCharDB = nil, nil
     CHAT = {}
-    -- The addon is loaded once and its state outlives a scenario; the parts
-    -- that would otherwise leak between them are cleared here.
-    if TalentAdvisor and TalentAdvisor.state then
-        local st = TalentAdvisor.state
-        st.build, st.plan, st.buildKey, st.talents, st.analysis = nil, nil, nil, nil, nil
-        st.upgrades, st.announced, st.worn = {}, {}, nil
-        st.dirtyGear, st.pendingItems = false, false
+    -- A scenario starts on a fresh character: every SavedVariable the loaded
+    -- addons declared goes back to what it is before the client has ever
+    -- written that file. A test wanting a returning character sets them again
+    -- after this.
+    for _, toc in pairs(Addons or {}) do
+        for _, list in ipairs({ toc.saved, toc.savedPerCharacter }) do
+            for _, var in ipairs(list) do _G[var] = nil end
+        end
     end
+    for _, fn in ipairs(World.onReset) do fn() end
 end
+
+-- An addon keeps state outside its SavedVariables - a cache on its own table,
+-- say - and that outlives a scenario because the addon is only loaded once.
+-- A test hooks the clearing of it back to here.
+function World.OnReset(fn) World.onReset[#World.onReset + 1] = fn end
 
 -- key is what a link looks like: the addon parses "item:<id>" out of it.
 function World.AddItem(key, def)
@@ -180,13 +187,26 @@ function Widget:GetTextColor()
 end
 function Widget:GetStringHeight() return Layout.TextHeight(self) end
 function Widget:GetStringWidth()
-    local size = Layout.FontSize(self)
+    local font = Layout.FontOf(self)
     local widest = 0
-    for _, line in ipairs(Layout.Wrap(self._text, size, nil)) do
-        widest = math.max(widest, Layout.Width(line, size))
+    for _, line in ipairs(Layout.Wrap(self._text, font, nil)) do
+        widest = math.max(widest, Layout.Width(line, font))
     end
     return widest
 end
+-- SetFont names a face and a size directly; SetFontObject and a region's
+-- inherits take a named one out of the client's own font table.
+function Widget:SetFont(path, size, flags)
+    self._font = { font = path, size = size, outline = flags,
+                   color = Layout.FontOf(self).color }
+    Layout.Invalidate()
+    return true
+end
+function Widget:GetFont()
+    local f = Layout.FontOf(self)
+    return f.font, f.size, f.outline
+end
+function Widget:GetFontObject() return self._font end
 function Widget:SetJustifyH(h) self._justify = h end
 function Widget:SetTexture(...) self._texture = { ... } end
 function Widget:SetFontObject(f) self._font = f; Layout.Invalidate() end
@@ -206,6 +226,87 @@ function Widget:RegisterEvent(e) self._events[e] = true end
 function Widget:UnregisterEvent(e) self._events[e] = nil end
 function Widget:IsEventRegistered(e) return self._events[e] == true end
 function Widget:SetOwner() end
+function Widget:UnregisterAllEvents() self._events = {} end
+function Widget:GetName() return self._name end
+function Widget:GetParent() return self._parent end
+function Widget:SetParent(parent) self._parent = parent; Layout.Invalidate() end
+function Widget:GetObjectType() return self._kind end
+function Widget:IsObjectType(kind) return self._kind == kind end
+function Widget:SetAlpha(a) self._alpha = a end
+function Widget:GetAlpha() return self._alpha or 1 end
+function Widget:SetShown(show) if show then self:Show() else self:Hide() end end
+function Widget:SetScale(s) self._scale = s end
+function Widget:GetScale() return self._scale or 1 end
+function Widget:GetEffectiveScale() return self:GetScale() end
+function Widget:SetFrameLevel(n) self._level = n end
+function Widget:GetFrameLevel() return self._level or 1 end
+function Widget:GetFrameStrata() return self._strata or "MEDIUM" end
+function Widget:SetID(id) self._id = id end
+function Widget:GetID() return self._id or 0 end
+function Widget:GetChildren() return unpack(self._children) end
+function Widget:GetNumChildren() return #self._children end
+function Widget:GetRegions() return unpack(self._children) end
+function Widget:SetToplevel() end
+function Widget:SetResizable() end
+function Widget:SetMinResize() end
+function Widget:SetMaxResize() end
+function Widget:SetHitRectInsets() end
+function Widget:SetUserPlaced() end
+function Widget:EnableKeyboard() end
+function Widget:Raise() end
+function Widget:Lower() end
+function Widget:SetAttribute(k, v) self._attrs = self._attrs or {}; self._attrs[k] = v end
+function Widget:GetAttribute(k) return self._attrs and self._attrs[k] end
+function Widget:SetTexCoord() end
+function Widget:SetVertexColor(r, g, b, a) self._vertex = { r, g, b, a } end
+function Widget:GetVertexColor()
+    local c = self._vertex or { 1, 1, 1, 1 }
+    return c[1], c[2], c[3], c[4]
+end
+function Widget:SetBlendMode() end
+function Widget:SetDrawLayer(layer) self._layer = layer end
+function Widget:GetTexture() return self._texture and self._texture[1] end
+function Widget:SetNormalTexture(t) self._normalTexture = t end
+function Widget:SetPushedTexture() end
+function Widget:SetHighlightTexture() end
+function Widget:SetDisabledTexture() end
+function Widget:GetNormalTexture() return self._normalTexture end
+function Widget:SetChecked(v) self._checked = v and true or false end
+function Widget:GetChecked() return self._checked end
+function Widget:Enable() self._enabled = true end
+function Widget:Disable() self._enabled = false end
+function Widget:IsEnabled() return self._enabled ~= false end
+function Widget:SetValue(v) self._value = v end
+function Widget:GetValue() return self._value or 0 end
+function Widget:SetMinMaxValues(a, b) self._min, self._max = a, b end
+function Widget:GetMinMaxValues() return self._min or 0, self._max or 1 end
+function Widget:SetStatusBarTexture() end
+function Widget:SetStatusBarColor() end
+function Widget:SetOrientation() end
+function Widget:SetAutoFocus() end
+function Widget:SetMaxLetters() end
+function Widget:SetNumeric() end
+function Widget:ClearFocus() end
+function Widget:SetFocus() end
+function Widget:HighlightText() end
+function Widget:SetScrollChild(child) self._scrollChild = child end
+function Widget:GetScrollChild() return self._scrollChild end
+function Widget:SetVerticalScroll() end
+function Widget:SetHorizontalScroll() end
+function Widget:UpdateScrollChildRect() end
+function Widget:GetVerticalScrollRange() return 0 end
+function Widget:SetSize(w, h) self:SetWidth(w); self:SetHeight(h) end
+function Widget:SetPushedTextOffset() end
+function Widget:SetNonSpaceWrap() end
+function Widget:SetWordWrap() end
+function Widget:SetIndentedWordWrap() end
+function Widget:SetShadowOffset() end
+function Widget:SetShadowColor() end
+function Widget:SetJustifyV() end
+function Widget:SetSpacing() end
+function Widget:CreateAnimationGroup()
+    return setmetatable({}, { __index = function() return function() end end })
+end
 
 function Widget:CreateFontString(name, layer, font)
     local w = newWidget("FontString", name, self)
@@ -338,7 +439,7 @@ function GetTalentInfo(tab, index)
     local row = talentList(tab)[index]
     if not row then return nil end
     local tier, col, max, name = row[1], row[2], row[3], row[4]
-    return name, "Interface\\Icons\\" .. name, tier, col,
+    return name, row.icon or "", tier, col,
         World.ranks[rankKey(tab, tier, col)] or 0, max
 end
 function LearnTalent(tab, index)
@@ -555,9 +656,13 @@ end
 local function describe(w, out)
     if not w._shown then return end
     local l, b, r, t = Layout.Rect(w)
+    local font = Layout.FontOf(w)
     local entry = {
         kind = w._kind, name = w._name or "", template = w._template or "",
-        font = w._font or "", size = Layout.FontSize(w), layer = w._layer or "",
+        font = type(w._font) == "string" and w._font or "",
+        size = font.size, face = Layout.FaceOf(font.font),
+        fontColor = { font.color[1], font.color[2], font.color[3] },
+        outline = font.outline or "", layer = w._layer or "",
         justify = w._justify or "LEFT",
         left = l, bottom = b, right = r, top = t,
         text = w._text or "", visible = Layout.Visible(w._text),
@@ -565,6 +670,8 @@ local function describe(w, out)
     if w._color then entry.color = { w._color[1], w._color[2], w._color[3] } end
     if w._backdrop then
         entry.backdrop = tostring(w._backdrop.edgeFile or "")
+        entry.backdropFill = tostring(w._backdrop.bgFile or "")
+        entry.edgeSize = tonumber(w._backdrop.edgeSize) or 16
         local c = w._backdropColor or { 0, 0, 0, 0.85 }
         entry.backdropColor = { c[1], c[2], c[3], c[4] }
     end
@@ -577,7 +684,7 @@ local function describe(w, out)
         -- coloured runs, so the picture keeps the "(meta)" orange and the
         -- "+12%" green that the layout only ever saw as characters
         local lines = {}
-        for _, runs in ipairs(Layout.WrapRuns(w._text, Layout.FontSize(w), r - l)) do
+        for _, runs in ipairs(Layout.WrapRuns(w._text, font, r - l)) do
             local out = {}
             for _, run in ipairs(runs) do
                 out[#out + 1] = { text = run.text, color = run.color }

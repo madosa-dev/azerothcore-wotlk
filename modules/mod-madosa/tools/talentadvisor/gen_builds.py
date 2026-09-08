@@ -153,7 +153,7 @@ BUILDS = {
          ]),
 
     dict(key='tank', name='Earthwarden', role='tank', school='melee', meta=True,
-         desc='Meta build: shield, Toughness, Anticipation and Shamanistic Rage. Holds five-mans, not raids.',
+         desc='Meta: a shield and Shamanistic Rage. Holds five-mans, not raid bosses.',
          dualWield=None, shield=True, armorFloor=0.6,
          weights=w(W_TANK, DEF=1.6, BLOCKR=0.3, BLOCK=0.2, INT=0.5, SP=0.3, MP5=0.3),
          notes=[
@@ -179,7 +179,7 @@ BUILDS = {
     'default': 'arms',
     'builds': [
     dict(key='arms', name='Arms', role='melee', school='melee',
-         desc='Two-hander, Mortal Strike, big Overpower and Slam hits. The standard levelling spec.',
+         desc='Two-hander and Mortal Strike. The standard levelling spec.',
          dualWield=None, armorFloor=0.55,
          weights=w(W_MELEE_STR),
          notes=[
@@ -248,7 +248,7 @@ BUILDS = {
          ]),
 
     dict(key='gladiator', name='Gladiator', role='melee', school='melee', meta=True,
-         desc='Meta build: damage with a shield up. Deep Wounds and Rend early, Sword and Board late.',
+         desc='Meta: damage with a shield up. Sword and Board, Deep Wounds, Rend.',
          dualWield=None, shield=True, armorFloor=0.55,
          weights=w(W_MELEE_STR, STA=1.2, ARMOR=0.03, BLOCK=0.8, BLOCKR=0.6,
                    DEF=0.8, DODGE=0.8, PARRY=0.8),
@@ -276,7 +276,7 @@ BUILDS = {
     'default': 'retribution',
     'builds': [
     dict(key='retribution', name='Retribution', role='melee', school='melee',
-         desc='Two-handed melee with seals and judgements. The fast way to 80.',
+         desc='Two-handed melee, seals and judgements. The fast way to 80.',
          dualWield=None, armorFloor=0.55,
          weights=w(W_MELEE_STR, INT=0.3, SP=0.25, MP5=0.3),
          notes=[
@@ -347,7 +347,7 @@ BUILDS = {
          ]),
 
     dict(key='shockadin', name='Shockadin', role='caster', school='spell', meta=True,
-         desc='Meta build: Holy Shock as a damage spell, in plate, with a shield. Odd and effective.',
+         desc='Meta: Holy Shock as a damage spell, in plate. Odd and effective.',
          dualWield=None, shield=True, armorFloor=0.6,
          weights=w(W_CASTER, INT=0.7, SPI=0.15, MP5=0.6, STA=0.4, ARMOR=0.02),
          notes=[
@@ -373,7 +373,7 @@ BUILDS = {
     'default': 'combat',
     'builds': [
     dict(key='combat', name='Combat', role='melee', school='melee',
-         desc='Sinister Strike with two one-handers. Steady, forgiving, good with any weapon.',
+         desc='Sinister Strike with two one-handers. Steady and forgiving.',
          dualWield=('always',), armorFloor=0.55,
          weights=w(W_MELEE_AGI),
          notes=[
@@ -396,7 +396,7 @@ BUILDS = {
          ]),
 
     dict(key='assassination', name='Assassination', role='melee', school='melee',
-         desc='Daggers and poisons. Mutilate at 54; before that it is Sinister Strike like everyone else.',
+         desc='Daggers and poisons. Mutilate at 54, Sinister Strike until then.',
          dualWield=('always',), armorFloor=0.55,
          weights=w(W_MELEE_AGI, CRIT=2.1, HIT=2.5, DPS_MH=5.0, DPS_OH=4.5,
                    SPEED_MH=0, SPEED_2H=0),
@@ -420,7 +420,7 @@ BUILDS = {
          ]),
 
     dict(key='subtlety', name='Subtlety', role='melee', school='melee',
-         desc='Openers, Hemorrhage and Shadowstep. Strong when you pick the fight, fragile when you do not.',
+         desc='Openers, Hemorrhage, Shadowstep. Strong when you pick the fight.',
          dualWield=('always',), armorFloor=0.55,
          weights=w(W_MELEE_AGI, CRIT=2.0, ARP=1.3, HASTE=1.2),
          notes=[
@@ -442,7 +442,7 @@ BUILDS = {
          ]),
 
     dict(key='riposte', name='Riposte', role='tank', school='melee', meta=True,
-         desc='Meta build: parry, Riposte and Vitality in leather. Tanks five-mans nothing else will let a rogue tank.',
+         desc='Meta: parry and Riposte in leather. A rogue that can hold a five-man.',
          dualWield=('always',), armorFloor=0.5,
          weights=w(W_TANK, AGI=2.6, STR=0.8, STA=2.2, DEF=1.4, DODGE=2.4, PARRY=2.6,
                    BLOCK=0.0, BLOCKR=0.0, ARMOR=0.05, AP=0.5, CRIT=1.0, HIT=1.4,

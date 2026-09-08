@@ -29,19 +29,37 @@ local GEN = 0
 function Layout.Invalidate() GEN = GEN + 1 end
 function Layout.Generation() return GEN end
 
--- The GameFont* objects the addon asks for, at the pixel sizes Fonts.xml gives
--- them in 3.3.5.
-Layout.FONT_SIZE = {
-    GameFontNormal = 12, GameFontNormalSmall = 10, GameFontNormalLarge = 16,
-    GameFontNormalHuge = 20, GameFontHighlight = 12, GameFontHighlightSmall = 10,
-    GameFontHighlightLarge = 16, GameFontDisable = 12, GameFontDisableSmall = 10,
-    GameFontGreen = 12, GameFontRed = 12, NumberFontNormal = 14,
-}
-Layout.DEFAULT_FONT_SIZE = 12
+-- Font objects come out of the client itself (data/fonts.lua, generated from
+-- Fonts.xml and FontStyles.xml), so GameFontNormal here is the same face,
+-- size and colour the game would draw with, and so are the other 148.
+Layout.DEFAULT_FONT = { font = "Fonts\\FRIZQT__.TTF", size = 12, color = { 1, 1, 1 } }
 
-function Layout.FontSize(widget)
-    return Layout.FONT_SIZE[widget._font or ""] or Layout.DEFAULT_FONT_SIZE
+local function faceOf(path)
+    return ((path or ""):gsub("\\", "/"):match("([^/]*)$") or ""):lower()
 end
+Layout.FaceOf = faceOf
+
+-- What a region draws with: the font object it inherits, or a face and size
+-- put on it directly by SetFont.
+function Layout.FontOf(widget)
+    local f = widget and widget._font
+    if type(f) == "table" then return f end
+    if type(f) == "string" and FontObjects and FontObjects[f] then return FontObjects[f] end
+    return Layout.DEFAULT_FONT
+end
+
+-- Callers may pass a font object or a bare pixel size; both are understood,
+-- and a bare size means the default face.
+local function resolveFont(font)
+    if type(font) == "table" then
+        return faceOf(font.font), font.size or 12
+    end
+    return faceOf(Layout.DEFAULT_FONT.font), font or 12
+end
+Layout.ResolveFont = resolveFont
+
+function Layout.FontSize(widget) return Layout.FontOf(widget).size end
+function Layout.FontColor(widget) return Layout.FontOf(widget).color or { 1, 1, 1 } end
 
 ----------------------------------------------------------------------------
 -- Text
@@ -108,30 +126,38 @@ function Layout.Visible(text)
     return table.concat(out)
 end
 
-local function metrics(size)
-    local m = FontMetrics[size]
+-- Metrics for a face at a size. A size nobody measured is scaled off the
+-- nearest one that was, which is exact for advances and near enough for the
+-- line height.
+local function metrics(font)
+    local face, size = resolveFont(font)
+    local byFace = FontMetrics[face] or FontMetrics[faceOf(Layout.DEFAULT_FONT.font)]
+    if not byFace then
+        error("no metrics for " .. tostring(face) .. " - run extract.py metrics", 0)
+    end
+    local m = byFace[size]
     if m then return m end
-    -- nearest size we measured, scaled
     local best, bestDiff
-    for s in pairs(FontMetrics) do
+    for s in pairs(byFace) do
         local d = math.abs(s - size)
         if not bestDiff or d < bestDiff then best, bestDiff = s, d end
     end
-    local base = FontMetrics[best]
+    local base = byFace[best]
     local scale = size / best
     local out = { lineHeight = base.lineHeight * scale, default = base.default * scale }
     for k, v in pairs(base) do
         if type(k) == "number" then out[k] = v * scale end
     end
-    FontMetrics[size] = out
+    byFace[size] = out
     return out
 end
+Layout.Metrics = metrics
 
-function Layout.LineHeight(size) return metrics(size).lineHeight end
+function Layout.LineHeight(font) return metrics(font).lineHeight end
 
 -- Width of one line, in pixels, with no markup in it.
-function Layout.Width(line, size)
-    local m = metrics(size)
+function Layout.Width(line, font)
+    local m = metrics(font)
     local w = 0
     for i = 1, #line do
         w = w + (m[line:byte(i)] or m.default)
@@ -147,8 +173,8 @@ local SLACK = 0.05
 -- Word wrap over coloured characters. Returns a list of lines, each a list of
 -- { text, color } runs - adjacent characters of the same colour merged, which
 -- is what a renderer wants and what Layout.Wrap flattens back to strings.
-function Layout.WrapRuns(text, size, maxWidth)
-    local m = metrics(size)
+function Layout.WrapRuns(text, font, maxWidth)
+    local m = metrics(font)
     local chars = Layout.Runs(text)
     local lines, line, word, lineW, wordW = {}, {}, {}, 0, 0
 
@@ -213,9 +239,9 @@ function Layout.WrapRuns(text, size, maxWidth)
 end
 
 -- The same wrap, as plain strings.
-function Layout.Wrap(text, size, maxWidth)
+function Layout.Wrap(text, font, maxWidth)
     local out = {}
-    for _, runs in ipairs(Layout.WrapRuns(text, size, maxWidth)) do
+    for _, runs in ipairs(Layout.WrapRuns(text, font, maxWidth)) do
         local parts = {}
         for _, run in ipairs(runs) do parts[#parts + 1] = run.text end
         out[#out + 1] = table.concat(parts)
@@ -279,10 +305,10 @@ RectX = function(w)
 
     local width = (w._width and w._width > 0) and w._width or nil
     if not width and w._kind == "FontString" and not (left and right) then
-        local size = Layout.FontSize(w)
+        local font = Layout.FontOf(w)
         local widest = 0
-        for _, line in ipairs(Layout.Wrap(w._text, size, nil)) do
-            widest = math.max(widest, Layout.Width(line, size))
+        for _, line in ipairs(Layout.Wrap(w._text, font, nil)) do
+            widest = math.max(widest, Layout.Width(line, font))
         end
         width = widest
     end
@@ -309,10 +335,10 @@ function Layout.TextHeight(w)
     if w._kind ~= "FontString" then return 0 end
     local visible = Layout.Visible(w._text)
     if visible == "" then return 0 end
-    local size = Layout.FontSize(w)
+    local font = Layout.FontOf(w)
     local l, r = RectX(w)
-    local lines = Layout.Wrap(w._text, size, r - l)
-    return #lines * Layout.LineHeight(size)
+    local lines = Layout.Wrap(w._text, font, r - l)
+    return #lines * Layout.LineHeight(font)
 end
 
 RectY = function(w)

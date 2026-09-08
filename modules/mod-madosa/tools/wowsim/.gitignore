@@ -1,0 +1,8 @@
+# Extracted from the client: Blizzard art and fonts, not ours to commit.
+# Run: python3 extract.py --client <wow dir> all
+art/
+
+# snapshot.lua + render.py regenerate these on demand.
+snapshots/
+
+__pycache__/
