@@ -158,6 +158,24 @@ function geterrorhandler() return handler end
 function seterrorhandler(fn) handler = fn end
 
 function message(text) print(text) end
+
+-- FrameXML's own formatting helper, used by anything that shows a duration.
+function SecondsToTime(seconds, noSeconds)
+    seconds = math.floor(tonumber(seconds) or 0)
+    if seconds <= 0 then return "" end
+    local parts = {}
+    local units = { { 86400, "Day" }, { 3600, "Hr" }, { 60, "Min" }, { 1, "Sec" } }
+    for _, unit in ipairs(units) do
+        if not (noSeconds and unit[1] == 1) then
+            local n = math.floor(seconds / unit[1])
+            if n > 0 then
+                parts[#parts + 1] = n .. " " .. unit[2] .. (n > 1 and "s" or "")
+                seconds = seconds - n * unit[1]
+            end
+        end
+    end
+    return table.concat(parts, " ")
+end
 function PlaySound() end
 function PlaySoundFile() end
 function GetScreenWidth() return SCREEN.width end
