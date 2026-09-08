@@ -516,7 +516,13 @@ function TA.SelectBuild(key)
     key = key or CharDB().build
     if not key then state.build, state.plan = nil, nil; return false, "unchosen" end
     local build = set[key]
-    if type(build) ~= "table" or not build.steps then return false, "unknown build '" .. tostring(key) .. "'" end
+    if type(build) ~= "table" or not build.steps then
+        -- A key that was valid once - a build since renamed or dropped - must
+        -- not strand the character with no advice at all: forget it and ask
+        -- again. A name typed at /ta build is just wrong, and says so.
+        if CharDB().build == key then CharDB().build = nil; return false, "unchosen" end
+        return false, "unknown build '" .. tostring(key) .. "'"
+    end
     CharDB().build = key
     state.buildKey = key
     state.build = build

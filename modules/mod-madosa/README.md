@@ -542,6 +542,15 @@ are substantial enough to stand on their own).
     holds: no talent past its rank cap, no tier before `5*(N-1)` points sit in
     that tree, no talent before its prerequisite is full, exactly 71 points.
     `run_tests.lua` repeats all of that under `lua5.1`, against the same trees.
+  - **Two test runs, neither of them needing a game.**
+    `tools/talentadvisor/run_tests.lua` calls the pure functions with plain
+    data - the plans, the walk, the scoring. `run_ui_tests.lua` runs the addon
+    itself inside `wow_sim.lua`, a stand-in client where frames remember their
+    points and text, tooltips have readable lines, and the talent, bag and
+    equipment APIs answer out of a table the test sets up: log in, answer the
+    picker, level up, click Learn, drop things in the bags, click a row. What
+    it cannot see is pixels - fonts have no metrics there, so layout is only
+    checked for sanity, never for looks.
   - **A build is positions, not names.** Each step is `{tab, tier, column,
     points}` as `GetTalentInfo()` reports them, so the plan is independent of
     client language and a talent can be revisited (Improved Shields gets two
