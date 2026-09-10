@@ -23,6 +23,23 @@
 // unlooted (e.g. they killed something before summoning Lootbot), summoning
 // it immediately loots that corpse too, instead of waiting for the next kill.
 //
+// Who the pet loots for
+// ---------------------
+// The core credits a kill to the Unit that landed the killing blow, and that
+// is a Player only for a direct hit. A totem's Searing Bolt, Fire Nova
+// rippling out of a totem, a pet's bite, a guardian's swing - all of those
+// reach Unit::Kill() with the totem/pet as the killer, and
+// PlayerScript::OnPlayerCreatureKill() never fires for them, because Kill()
+// only dispatches it for killer->ToPlayer(). An aura can even arrive with no
+// killer at all once its caster is no longer resolvable. So this listens on
+// UnitScript::OnUnitDeath() instead - the last thing Unit::Kill() does, after
+// the loot is filled and UNIT_DYNFLAG_LOOTABLE is set - and asks who holds
+// loot rights rather than who struck last: the player behind the killer (the
+// owner of a pet/totem, or the player themself), then the corpse's loot
+// recipient, then the recipient group's members in loot range. The first of
+// those with the pet out loots; what they may actually take is still decided
+// by SendLoot()/StoreLootItem() exactly as before.
+//
 // There's no single "give the player everything" helper in the core, and
 // group loot permission (round robin turn, master loot, need/greed rolls) is
 // resolved as a side effect deep inside Player::SendLoot()/StoreLootItem(),
@@ -70,6 +87,7 @@
 #include "mod_madosa_settings.h"
 
 #include "Creature.h"
+#include "Group.h"
 #include "Loot/LootMgr.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
@@ -78,7 +96,10 @@
 #include "TemporarySummon.h"
 #include "WorldSession.h"
 
+#include <algorithm>
+#include <mutex>
 #include <unordered_map>
+#include <vector>
 
 namespace
 {
@@ -101,8 +122,23 @@ namespace
 
     // Most recent kill per player that still had loot on it, so summoning
     // Lootbot right after a kill can catch that corpse too. Only the latest
-    // one is tracked - deliberately not a full nearby-corpse sweep.
+    // one is tracked - deliberately not a full nearby-corpse sweep. Written
+    // from map-update threads, which run in parallel, hence the lock.
+    std::mutex lastLootableKillLock;
     std::unordered_map<ObjectGuid, ObjectGuid> lastLootableKill;
+
+    void RememberKill(Player* player, Creature* corpse)
+    {
+        std::lock_guard<std::mutex> lock(lastLootableKillLock);
+        lastLootableKill[player->GetGUID()] = corpse->GetGUID();
+    }
+
+    ObjectGuid RememberedKill(Player* player)
+    {
+        std::lock_guard<std::mutex> lock(lastLootableKillLock);
+        auto itr = lastLootableKill.find(player->GetGUID());
+        return itr != lastLootableKill.end() ? itr->second : ObjectGuid::Empty;
+    }
 
     // The one corpse this thread is currently auto-looting, and for whom. Read
     // by the OnPlayerCanLootOutOfRange hook and set only by the guard below, so
@@ -138,6 +174,31 @@ namespace
 
         Creature* critter = ObjectAccessor::GetCreature(*player, critterGuid);
         return critter && IsAutoLootCompanion(critter->GetEntry());
+    }
+
+    // Everyone the core credits with this kill, in the order they should get
+    // first go at the corpse. See "Who the pet loots for" at the top.
+    std::vector<Player*> LootCandidates(Creature* corpse, Unit* killer)
+    {
+        std::vector<Player*> candidates;
+        auto add = [&candidates](Player* player)
+        {
+            if (player && std::find(candidates.begin(), candidates.end(), player) == candidates.end())
+                candidates.push_back(player);
+        };
+
+        if (killer)
+            add(killer->GetCharmerOrOwnerPlayerOrPlayerItself());
+
+        add(corpse->GetLootRecipient());
+
+        if (Group* group = corpse->GetLootRecipientGroup())
+            for (GroupReference* itr = group->GetFirstMember(); itr; itr = itr->next())
+                if (Player* member = itr->GetSource())
+                    if (member->IsAtLootRewardDistance(corpse))
+                        add(member);
+
+        return candidates;
     }
 
     void AutoLoot(Player* player, Creature* target)
@@ -203,22 +264,6 @@ public:
         return t_reachingFor && lootGuid == t_reachingFor && player->GetGUID() == t_reachingPlayer;
     }
 
-    void OnPlayerCreatureKill(Player* killer, Creature* killed) override
-    {
-        if (!MadosaSettings::GetAutoLootPetEnable())
-            return;
-
-        if (!killed->HasDynamicFlag(UNIT_DYNFLAG_LOOTABLE))
-            return;
-
-        lastLootableKill[killer->GetGUID()] = killed->GetGUID();
-
-        if (!HasAutoLootCompanion(killer))
-            return;
-
-        AutoLoot(killer, killed);
-    }
-
     void OnPlayerBeforeTempSummonInitStats(Player* player, TempSummon* tempSummon, uint32& /*duration*/) override
     {
         if (!IsAutoLootCompanion(tempSummon->GetEntry()))
@@ -227,18 +272,48 @@ public:
         if (!MadosaSettings::GetAutoLootPetEnable())
             return;
 
-        auto itr = lastLootableKill.find(player->GetGUID());
-        if (itr == lastLootableKill.end())
+        ObjectGuid corpse = RememberedKill(player);
+        if (!corpse)
             return;
 
-        Creature* target = ObjectAccessor::GetCreature(*player, itr->second);
+        Creature* target = ObjectAccessor::GetCreature(*player, corpse);
         if (target && target->IsInWorld() && target->HasDynamicFlag(UNIT_DYNFLAG_LOOTABLE)
             && player->IsWithinDistInMap(target, SUMMON_CATCHUP_RANGE))
             AutoLoot(player, target);
     }
 };
 
+// Fires for every death, not only the ones a player landed - see "Who the pet
+// loots for" at the top.
+class mod_madosa_autoloot_pet_death : public UnitScript
+{
+public:
+    mod_madosa_autoloot_pet_death() : UnitScript("mod_madosa_autoloot_pet_death", true, { UNITHOOK_ON_UNIT_DEATH }) { }
+
+    void OnUnitDeath(Unit* unit, Unit* killer) override
+    {
+        if (!MadosaSettings::GetAutoLootPetEnable())
+            return;
+
+        Creature* killed = unit->ToCreature();
+        if (!killed || !killed->HasDynamicFlag(UNIT_DYNFLAG_LOOTABLE))
+            return;
+
+        std::vector<Player*> candidates = LootCandidates(killed, killer);
+        for (Player* player : candidates)
+            RememberKill(player, killed);
+
+        for (Player* player : candidates)
+            if (HasAutoLootCompanion(player))
+            {
+                AutoLoot(player, killed);
+                return;
+            }
+    }
+};
+
 void AddSC_madosa_autoloot_pet()
 {
     new mod_madosa_autoloot_pet();
+    new mod_madosa_autoloot_pet_death();
 }
