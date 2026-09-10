@@ -34,6 +34,14 @@
 // to a plain OnPlayerLearnSpell like anything else that grants a spell -
 // Player::learnSpell() calls the hook for every caller (item use, trainer,
 // quest reward, ...), not just Vanity items specifically.
+//
+// That hook is a hot path, though: bots and players learn spells constantly,
+// and a single Craftbot visit is thousands of learnSpell() calls. So the
+// account's unlocked set is read from the DB exactly once, at login, and kept
+// on the player; every learn after that is answered from memory and only ever
+// writes (asynchronously, and only for a companion we hadn't recorded yet).
+// Nothing here may run a blocking CharacterDatabase.Query() per learn - that
+// used to stall the world update thread for seconds at a time.
 
 #include "CharacterDatabase.h"
 #include "ItemTemplate.h"
@@ -43,16 +51,28 @@
 #include "WorldSession.h"
 #include "mod_madosa_settings.h"
 
+#include <unordered_set>
 #include <vector>
 
 namespace
 {
     constexpr uint32 VANITY_QUALITY = 6;
+    constexpr char const* COMPANION_DATA_KEY = "mod_madosa_account_companions";
 
     // Populated once at startup (see mod_madosa_account_companions_world
     // below) from every Vanity item's learn-spell. A restart is needed to
     // pick up a newly added Vanity item, same as trainer/quest data.
     std::vector<uint32> vanityLearnSpells;
+
+    // Lives in the player's own DataMap rather than in a module-global map,
+    // so map update threads never touch each other's copy and no locking is
+    // needed. It only ever holds the <= vanityLearnSpells.size() companion
+    // spells of one account.
+    struct AccountCompanionData : public DataMap::Base
+    {
+        std::unordered_set<uint32> unlocked;
+        bool syncing = false;
+    };
 
     void LoadVanityLearnSpells()
     {
@@ -85,6 +105,26 @@ namespace
         return MadosaSettings::GetAccountCompanionsEnable();
     }
 
+    // The one DB read of the whole session. Characters of the same account
+    // that are already online keep the set they loaded at their own login -
+    // that matches the documented "from their next login on" behavior.
+    void LoadAccountCompanions(Player* player)
+    {
+        AccountCompanionData* data = player->CustomData.GetDefault<AccountCompanionData>(COMPANION_DATA_KEY);
+        data->unlocked.clear();
+
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT spell_id FROM account_companion_pets WHERE account_id = {}",
+            player->GetSession()->GetAccountId());
+        if (!result)
+            return;
+
+        do
+        {
+            data->unlocked.insert(result->Fetch()[0].Get<uint32>());
+        } while (result->NextRow());
+    }
+
     // Grants any companion the account already owns but this character
     // doesn't know yet, and records any this character knows that the
     // account doesn't have on file yet (first use, or a login predating
@@ -94,35 +134,61 @@ namespace
         if (!AccountCompanionsEnabled())
             return;
 
+        // Absent only for a learn that lands before OnPlayerLogin; the login
+        // sync right after it covers those.
+        AccountCompanionData* data = player->CustomData.Get<AccountCompanionData>(COMPANION_DATA_KEY);
+        if (!data)
+            return;
+
+        // learnSpell() below fires OnPlayerLearnSpell again, which lands back
+        // here - without this the loop re-enters once per companion granted.
+        if (data->syncing)
+            return;
+
+        data->syncing = true;
+
         uint32 accountId = player->GetSession()->GetAccountId();
 
         for (uint32 spellId : vanityLearnSpells)
         {
             if (player->HasSpell(spellId))
             {
-                CharacterDatabase.Execute(
-                    "INSERT IGNORE INTO account_companion_pets (account_id, spell_id) VALUES ({}, {})",
-                    accountId, spellId);
-                continue;
+                // insert() tells us whether this is news to the account, so
+                // the write happens once per session instead of once per learn.
+                if (data->unlocked.insert(spellId).second)
+                    CharacterDatabase.Execute(
+                        "INSERT IGNORE INTO account_companion_pets (account_id, spell_id) VALUES ({}, {})",
+                        accountId, spellId);
             }
-
-            QueryResult result = CharacterDatabase.Query(
-                "SELECT 1 FROM account_companion_pets WHERE account_id = {} AND spell_id = {}",
-                accountId, spellId);
-            if (result)
+            else if (data->unlocked.count(spellId))
                 player->learnSpell(spellId);
         }
+
+        data->syncing = false;
     }
 }
 
 class mod_madosa_account_companions : public PlayerScript
 {
 public:
-    mod_madosa_account_companions() : PlayerScript("mod_madosa_account_companions") { }
+    mod_madosa_account_companions() : PlayerScript("mod_madosa_account_companions", {
+        PLAYERHOOK_ON_LOGIN,
+        PLAYERHOOK_ON_LOGOUT,
+        PLAYERHOOK_ON_LEARN_SPELL
+    }) { }
 
     void OnPlayerLogin(Player* player) override
     {
+        if (!AccountCompanionsEnabled())
+            return;
+
+        LoadAccountCompanions(player);
         SyncAccountCompanions(player);
+    }
+
+    void OnPlayerLogout(Player* player) override
+    {
+        player->CustomData.Erase(COMPANION_DATA_KEY);
     }
 
     void OnPlayerLearnSpell(Player* player, uint32 /*spellID*/) override
